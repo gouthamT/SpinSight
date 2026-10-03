@@ -50,17 +50,17 @@ function TenNumbers({ top, baseline }: { top: RankedPocket[]; baseline: number }
   const mid = (ten[0]!.probability + ten[ten.length - 1]!.probability) / 2;
   const maxDev = Math.max(...ten.map((r) => Math.abs(r.probability - mid)), 1e-12);
   return (
-    <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-10">
+    <div className="grid grid-cols-10 gap-1 sm:gap-1.5">
       {ten.map((r) => {
         const c = heatColour(r.probability, mid, maxDev);
         return (
           <div
             key={r.pocket}
-            className="flex aspect-square items-center justify-center rounded-lg"
+            className="flex aspect-square min-w-0 items-center justify-center rounded-md sm:rounded-lg"
             style={{ background: c.bg, color: c.fg }}
             title={`#${r.rank} · ${pocketLabel(r.pocket)} · ${pct(r.probability, 2)} (uniform ${pct(baseline, 2)})`}
           >
-            <span className="num text-lg font-bold">{pocketLabel(r.pocket)}</span>
+            <span className="num text-[13px] font-bold tracking-tighter sm:text-lg sm:tracking-normal">{pocketLabel(r.pocket)}</span>
           </div>
         );
       })}

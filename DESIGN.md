@@ -212,7 +212,7 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
   - one **Guess** button
   - then **one row of 10 numbers per algorithm or pattern**, shaded dark green (strongest) → dark red (weakest) within that row. Default row order: Physics, Kinematic, Rapier, Matter, Combined, Hot numbers, Sequence pattern.
   - **Reordering:** hold the ⠿ handle and drag a row to move it. This uses pointer events, so it works with touch on phones; arrow keys also work. The order is saved in localStorage.
-  - **Mobile first:** 375 px layout with a 5×2 number grid, 40 px touch handles, and a Guess button that sticks to the bottom of the screen on phones. The normal keyboard is kept because results need spaces.
+  - **Mobile first:** 375 px layout with each row's ten numbers on a single line (about 32 px tiles at 375 px wide), 40 px touch handles, and a Guess button that sticks to the bottom of the screen on phones. The normal keyboard is kept because results need spaces.
 - **Instant guesses** (an earlier version took 10–30 s per guess):
   - Each engine's **offset kernel** K[d] = P(next = previous + d) is computed **once per settings**: launches come from random start pockets and only the landing offset is kept. The kernels are computed in **three parallel workers** (`engineKernel.worker.ts`) in the background as soon as the page or Settings change, and cached in localStorage under a settings key.
   - A guess then just rotates each cached kernel to the last result (`viewFromKernel`).
