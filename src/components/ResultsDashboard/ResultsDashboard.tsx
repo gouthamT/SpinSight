@@ -237,7 +237,10 @@ export function ResultsDashboard() {
             <label htmlFor="history" className="text-lg font-semibold">Previous Roulette Results (Oldest → Newest)</label>
             <p className="text-xs text-ink-400">
               <span className="num text-ink-200">{parsed.values.length}</span> spins · {WHEEL_LABEL[wheelType]} ·{" "}
-              <Link href="/settings" className="text-accent hover:underline">Settings</Link>
+              <span title="Wheel configuration (change in Settings)">
+                ball {settings.physics.ballDirection === "clockwise" ? "↻" : "↺"} · wheel {settings.physics.ballDirection === "clockwise" ? "↺" : "↻"}
+              </span>{" "}
+              · <Link href="/settings" className="text-accent hover:underline">Settings</Link>
             </p>
           </div>
           <button className="btn-ghost ml-auto shrink-0" onClick={clearHistory} disabled={!text}>Clear</button>
