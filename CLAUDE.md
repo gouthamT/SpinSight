@@ -3,7 +3,7 @@
 Read `docs/DESIGN.md` first; it has the full design, status and roadmap. This file holds the short rules.
 
 ## What this is
-A Next.js 15 + TypeScript app that measures a roulette wheel (ball and rotor angles and speeds) from a camera or video. From Phase 4 it estimates landing-pocket probabilities and backtests them against the uniform baseline. **Phases 1–4 are done (vision tracking, Kalman filter, deceleration fit, spin phases, drop projection plus learned scatter giving pocket probabilities with walk-forward scoring). Phase 5 (Rapier/Matter adapters + Simulation lab) is done; Phase 6 (spin history + Supabase) is next. The default post-login screen is the results dashboard (`/dashboard`); the old overview is at `/overview`; settings (guide defaults) are at `/settings`.**
+A Next.js 15 + TypeScript app that measures a roulette wheel (ball and rotor angles and speeds) from a camera or video. From Phase 4 it estimates landing-pocket probabilities and backtests them against the uniform baseline. **Phases 1–4 are done (vision tracking, Kalman filter, deceleration fit, spin phases, drop projection plus learned scatter giving pocket probabilities with walk-forward scoring). Phase 5 (Rapier/Matter adapters + Simulation lab) is done; Phase 6 (spin history, stored locally only, with no Supabase) is next. The default post-login screen is the results dashboard (`/dashboard`); the old overview is at `/overview`; settings (guide defaults) are at `/settings`.**
 
 ## Hard rules
 - It is a research and education tool for a privately owned wheel, recorded video, or the synthetic wheel. Do not build features for covert or in-casino use. Using a prediction device at a casino is illegal (e.g. Qld Casino Control Act s.103).
@@ -52,4 +52,4 @@ Use `src/engine/synthetic/syntheticWheel.ts` as the ground-truth oracle: render 
 - `src/engine/physics/{rouletteScene,trajectoryModel,rapierEngine,matterEngine,simulationAdapter}.ts`, `src/workers/simulation.worker.ts`, `src/components/PhysicsVisualization/*`: Phase 5
 - `src/engine/history/*`, `src/workers/historySim.worker.ts`, `src/components/ResultsDashboard/*`, `src/lib/storage/resultsStore.ts`: results dashboard and settings
 - `src/components/WheelCalibration/CalibrationWizard.tsx`, `src/components/CameraFeed/LiveAnalysis.tsx`: the main UI
-- `supabase/migrations/0001_init.sql`: database schema (used from Phase 6)
+- `supabase/migrations/0001_init.sql`: unused (decision D21: history stays local)

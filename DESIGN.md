@@ -27,7 +27,7 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
 | Styling | Tailwind CSS v4 (`@tailwindcss/postcss`), dark theme tokens in `globals.css` | Custom classes: `.panel`, `.panel-title`, `.btn-primary`, `.btn-ghost`, `.input`, `.num` (`btn` is an `@utility`) |
 | Auth | One hardcoded user, checked in the `/api/auth/login` route (Node runtime, constant-time compare) and stored as a signed HS256 JWT cookie via `jose`. `src/middleware.ts` protects everything except `/login` and `/api/auth/login`. | Environment variables `AUTH_USERNAME`, `AUTH_PASSWORD`, `AUTH_SECRET`. Dev fallback is `admin` / `spinsight`. |
 | Local storage | IndexedDB via `idb-keyval` | Active calibration key: `spinsight:calibration:active` |
-| Database | Supabase Postgres (free tier) from Phase 6 | Schema is in `supabase/migrations/0001_init.sql`. RLS is enabled with no anonymous policies. |
+| Database | None: history stays in the browser (D21) | `supabase/migrations/0001_init.sql` is kept but unused. |
 | Hosting | Vercel Hobby (Cloudflare Pages as an alternative) | HTTPS is required for the camera |
 | Tests | Vitest (`npm test`) | The suites also run under `node:test` through a shim, because the build sandbox had no npm access |
 | Planned | `@dimforge/rapier3d-compat` (Phase 5), `matter-js` (Phase 5) | OpenCV.js is optional. The current vision code is plain TypeScript and needs no OpenCV. |
@@ -390,9 +390,9 @@ Building blocks already in place: `decelerationModel.ts` (`timeToOmega`, `thetaA
 - Both run in `simulation.worker.ts`. Compare them with Model B and the synthetic generator.
 - Never assume either engine matches a real wheel; fit parameters to recorded spins.
 
-### Phase 6: History & storage (NEXT)
-- Persist each spin as a `SpinRecord`, its raw `FrameMeasurement[]` (gzipped JSON, held in IndexedDB and uploaded to Supabase Storage bucket `spin-frames`) and its calibration.
-- **Supabase access** goes through server route handlers that use the service-role key, which is kept server-only. RLS is already enabled.
+### Phase 6: History & storage (NEXT; local only, by decision: no Supabase)
+- Persist each spin as a `SpinRecord`, its raw `FrameMeasurement[]` (gzipped JSON, held in IndexedDB only) and its calibration.
+- No server storage: export/import JSON is the backup path.
 - **Actual pocket entry:** manual entry, plus the automatic "pocket under ball when settled" with a confirmation step.
 - CSV and JSON import/export.
 - **Analytics:**
@@ -448,6 +448,7 @@ Building blocks already in place: `decelerationModel.ts` (`timeToOmega`, `thetaA
 | D17 | History dashboard uses prequential BMA including "uniform" | Past results of a fair wheel carry no information; the model must be able to say so |
 | D19 | Both engines use 2-D top-down scenes with slope forces | A 3-D bowl would need tuned trimesh geometry with no data to validate it; 2-D keeps the engines comparable and fast enough for batches |
 | D20 | Smooth rim constraint shared by all adapters | Polygonal rims caused ghost bounces; the rim is not where engines should differ |
+| D21 | Spin history stays local (IndexedDB/localStorage); no Supabase sync | User's choice: keep data on the device. `supabase/` remains unused |
 | D18 | No live ball-position or direction input for casino use | Would be a prediction device at a table, illegal under NSW/Qld casino law; also no informational value without measured speeds |
 
 ---

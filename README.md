@@ -12,7 +12,7 @@ SpinSight measures a roulette wheel from a camera or video and works out the bal
 | 4 | Drop-time projection (2 models, Monte Carlo), learned scatter, pocket probabilities, lock point, walk-forward scoring vs uniform | ✅ |
 | — | Results dashboard (default screen): history input, "Guess next 10" via physics Monte Carlo + model averaging vs uniform, heat grid, settings from the table guide | ✅ |
 | 5 | Rapier.js / Matter.js / kinematic adapters on one shared scene, Simulation lab with replays and batch comparison | ✅ |
-| 6 | Spin history (IndexedDB + Supabase) | next |
+| 6 | Spin history (stored locally in the browser) | next |
 | 7–9 | Backtesting, final dashboard polish, hardening | planned |
 
 ## Run locally
@@ -31,7 +31,7 @@ Default dev login if env vars are unset: `admin` / `spinsight`.
 
 1. **GitHub**: push this folder to a new repo.
 2. **Vercel (Hobby, free)**: go to *Add New → Project*, import the repo (framework auto-detected), and add the environment variables `AUTH_USERNAME`, `AUTH_PASSWORD` and `AUTH_SECRET` (a 64-char random hex string), then deploy. You get HTTPS automatically, which the camera needs.
-3. **Supabase (free tier, used from Phase 6)**: create a project, then go to *SQL editor* and run `supabase/migrations/0001_init.sql`. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to Vercel.
+3. **No database needed**: spin history and settings stay in your browser (localStorage/IndexedDB). They are per device and per browser, so clearing site data removes them.
 
 Cloudflare Pages (via `@cloudflare/next-on-pages`) also works as a free alternative.
 
@@ -88,7 +88,6 @@ src/engine/physics                  deceleration model closed form (Phase 4 adds
 src/engine/synthetic                deterministic spin generator + renderer
 src/engine/wheel                    pocket orders, colours, angle↔pocket
 src/workers/tracking.worker.ts
-supabase/migrations/0001_init.sql
+supabase/migrations/0001_init.sql   (unused: history is local only)
 tests/                              vitest suites
 ```
-# Powerball-AU
