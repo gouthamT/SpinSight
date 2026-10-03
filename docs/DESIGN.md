@@ -1,6 +1,6 @@
 # SpinSight: Design Document & Handoff
 
-_Last updated: 3 Oct 2026 · State: Phases 1–4 complete, Phase 5 next · Model version tag: `p4-ensemble-0.1`_
+_Last updated: 3 Oct 2026 · State: Phases 1–4 complete plus the results dashboard (default screen); Phase 5 next · Model version tag: `p4-ensemble-0.1`_
 
 This document is the single source of truth for continuing the project in a new session or by a new engineer. Read it together with `CLAUDE.md` (working rules) and `README.md` (run/deploy).
 
@@ -205,7 +205,30 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
 - **Effective ω_c:** the deceleration law's |ω| at the observed drop time, not the Kalman ω. This makes Model B reproduce the observed drop time. An early version used the Kalman ω, which put the projected drop 12 pockets off on average; the fix brought it down to 1.8.
 - **No history:** the scatter kernel is uniform, so the landing distribution is exactly 1/N. This is tested.
 
-### 5.9 Synthetic wheel (test oracle)
+### 5.9 Results dashboard (default screen, `/dashboard`)
+- **Inputs:** results typed oldest → newest, validated per wheel (European 0–36, American plus 00, triple zero plus 00 and 000; 00 = −1, 000 = −2). Invalid tokens are highlighted in place with a mirrored backdrop and explained. Valid text auto-saves to localStorage.
+- **"Guess next 10"** runs `historySim.worker.ts` → `predictFromHistory`, which combines four models by **Bayesian model averaging, using walk-forward (prequential) likelihood on the user's own history**:
+  1. **uniform**
+  2. **frequency:** Dirichlet(1) on pocket counts, i.e. wheel bias
+  3. **sequence-offset:** Dirichlet(1) on the wheel distance between consecutive results, i.e. release signature
+  4. **physics-release:** seeded Monte Carlo. The ball is released from the previous result's pocket with the configured launch and rotor speed spreads, the deceleration law to the drop speed, a deflector hit, and fret bounce, giving a kernel over offsets.
+- **Outputs:**
+  - all pockets ranked, shown as a green-to-red heat grid relative to the baseline, with a noise warning
+  - top-10 tiles with bars and the baseline marker
+  - the full distribution in wheel order
+  - a χ² uniformity test and 2·ln BF evidence against uniform
+  - a verdict: insufficient-data, no-evidence, weak, moderate or strong
+  - copy and run-again buttons
+- **Update results:** appends the actual result and scores the previous guess. The guess record shows top-10 hits and the mean probability of the actual result, each against chance.
+- **Honest behaviour (tested):**
+  - fair 1000-spin histories stay within 1.25× of uniform with no-evidence or weak verdicts
+  - a 3×-biased pocket over 2000 spins is detected as strong and ranked #1
+  - a synthetic +10-pocket signature is detected
+  - with realistic launch-speed spread the physics kernel is within 15% of uniform (about 250 pockets of relative travel)
+- **Settings page** (`/settings`, localStorage): defaults live in `src/config/roulette-defaults.json`, taken from the venue's Roulette guide. Single-zero 0–36 (37 pockets) is standard and 00 is the variant; ball and wheel spin in opposite directions; house margin 2.70% and 5.26% (RTP 97.30% and 94.74%) shown for reference. Physics speeds are generic assumptions, because the guide gives none.
+- **Deliberately not built:** live entry of the ball's start position or spin direction during a spin for in-casino use (see the use boundary in §1).
+
+### 5.10 Synthetic wheel (test oracle)
 - **Camera:** in-plane rotation, foreshortening, and an optional projective term.
 - **Spin generator:**
   - track phase: `ω̇ = −(a + bω²)·sgn ω` with a = 0.3 and b = 0.011
@@ -221,7 +244,7 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
 
 ## 6. Verification status
 
-Automated: **62 tests pass** (`tests/angles`, `layout`, `ellipse`, `tracking`, `kalman`, `deceleration`, `motion`, `prediction`). End-to-end synthetic scenarios:
+Automated: **78 tests pass** (incl. `tests/history`) (`tests/angles`, `layout`, `ellipse`, `tracking`, `kalman`, `deceleration`, `motion`, `prediction`). End-to-end synthetic scenarios:
 
 | Scenario | Rotor err p95 | Ball-rel-rotor err p95 | Track detection | Settled pocket |
 |---|---|---|---|---|
@@ -380,6 +403,8 @@ Building blocks already in place: `decelerationModel.ts` (`timeToOmega`, `thetaA
 | D14 | Uniform scatter prior with pseudo-count 8 | No history means exactly the baseline; evidence accumulates smoothly |
 | D15 | Separate real and synthetic profiles | Synthetic spins must never inflate a real wheel's learned scatter |
 | D16 | Live scoring is walk-forward by construction | The profile used for spin k contains only spins < k |
+| D17 | History dashboard uses prequential BMA including "uniform" | Past results of a fair wheel carry no information; the model must be able to say so |
+| D18 | No live ball-position or direction input for casino use | Would be a prediction device at a table, illegal under NSW/Qld casino law; also no informational value without measured speeds |
 
 ---
 

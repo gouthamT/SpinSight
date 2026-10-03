@@ -35,3 +35,14 @@ describe("wheel layout", () => {
     expect(neighbours("european", 0, 1)).toEqual([26, 0, 32]);
   });
 });
+
+describe("triple-zero wheel", () => {
+  it("has 39 unique pockets including 0, 00, 000", async () => {
+    const { TRIPLE_ZERO_ORDER, TRIPLE_ZERO, pocketLabel, pocketColour } = await import("@/engine/wheel/layout");
+    expect(TRIPLE_ZERO_ORDER).toHaveLength(39);
+    expect(new Set(TRIPLE_ZERO_ORDER).size).toBe(39);
+    expect(TRIPLE_ZERO_ORDER.slice(0, 4)).toEqual([0, TRIPLE_ZERO, DOUBLE_ZERO, 32]);
+    expect(pocketLabel(TRIPLE_ZERO)).toBe("000");
+    expect(pocketColour(TRIPLE_ZERO)).toBe("green");
+  });
+});

@@ -257,10 +257,10 @@ export function CalibrationWizard() {
             {step === "type" && (
               <>
                 <p className="text-ink-300">Capture a sharp still with the whole wheel visible, then pick the wheel type.</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["european", "american"] as const).map((t) => (
+                <div className="grid grid-cols-1 gap-2">
+                  {(["european", "american", "triple-zero"] as const).map((t) => (
                     <button key={t} className={wheelType === t ? "btn-primary" : "btn-ghost"} onClick={() => setWheelType(t)}>
-                      {t === "european" ? "European · 37" : "American · 38"}
+                      {t === "european" ? "European · 37" : t === "american" ? "American · 38" : "Triple zero · 39"}
                     </button>
                   ))}
                 </div>

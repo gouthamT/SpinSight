@@ -1,8 +1,9 @@
 import type { RotationSign, WheelType } from "@/types/roulette";
 import { TWO_PI, wrapAngle } from "@/engine/geometry/angles";
 
-/** "00" on American wheels is represented by -1. */
+/** "00" is represented by -1 and "000" by -2. */
 export const DOUBLE_ZERO = -1;
+export const TRIPLE_ZERO = -2;
 
 /** Clockwise order as printed on a standard single-zero wheel, starting at 0. */
 export const EUROPEAN_ORDER: readonly number[] = [
@@ -16,12 +17,19 @@ export const AMERICAN_ORDER: readonly number[] = [
   12, 8, 19, 31, 18, 6, 21, 33, 16, 4, 23, 35, 14, 2,
 ];
 
+/**
+ * Triple-zero wheel order (clockwise from 0), per Wizard of Odds:
+ * 0-000-00-32-15-19-…-26, i.e. the single-zero sequence with 000 and 00
+ * inserted after 0.
+ */
+export const TRIPLE_ZERO_ORDER: readonly number[] = [0, TRIPLE_ZERO, DOUBLE_ZERO, ...EUROPEAN_ORDER.slice(1)];
+
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
 export type PocketColour = "red" | "black" | "green";
 
 export function pocketOrder(type: WheelType): readonly number[] {
-  return type === "european" ? EUROPEAN_ORDER : AMERICAN_ORDER;
+  return type === "european" ? EUROPEAN_ORDER : type === "american" ? AMERICAN_ORDER : TRIPLE_ZERO_ORDER;
 }
 
 export function pocketCount(type: WheelType): number {
@@ -29,13 +37,19 @@ export function pocketCount(type: WheelType): number {
 }
 
 export function pocketColour(n: number): PocketColour {
-  if (n === 0 || n === DOUBLE_ZERO) return "green";
+  if (n === 0 || n === DOUBLE_ZERO || n === TRIPLE_ZERO) return "green";
   return RED.has(n) ? "red" : "black";
 }
 
 export function pocketLabel(n: number): string {
-  return n === DOUBLE_ZERO ? "00" : String(n);
+  return n === DOUBLE_ZERO ? "00" : n === TRIPLE_ZERO ? "000" : String(n);
 }
+
+export const WHEEL_LABEL: Record<WheelType, string> = {
+  european: "European · single zero (37)",
+  american: "American · double zero (38)",
+  "triple-zero": "Triple zero (39)",
+};
 
 /** Angular width of one pocket. */
 export function pocketPitch(type: WheelType): number {

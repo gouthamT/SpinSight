@@ -10,7 +10,7 @@
  *   video's media clock). Date.now() is never used for motion maths.
  */
 
-export type WheelType = "european" | "american";
+export type WheelType = "european" | "american" | "triple-zero";
 
 /** +1 = counter-clockwise on screen, -1 = clockwise on screen. */
 export type RotationSign = 1 | -1;

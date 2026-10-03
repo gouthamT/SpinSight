@@ -4,11 +4,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard", label: "Results & guess" },
+  { href: "/overview", label: "Overview" },
   { href: "/live-analysis", label: "Live analysis" },
   { href: "/calibration", label: "Calibration" },
-  { href: "/history", label: "History" },
+  { href: "/history", label: "Spin records" },
   { href: "/simulation", label: "Simulation lab" },
+  { href: "/settings", label: "Settings" },
   { href: "/limitations", label: "Limitations" },
 ];
 

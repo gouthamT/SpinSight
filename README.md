@@ -10,6 +10,7 @@ SpinSight measures a roulette wheel from a camera or video and works out the bal
 | 2 | Wheel rectification (affine + perspective), ball tracking, rotor tracking, worker pipeline, raw ω | ✅ |
 | 3 | Kalman filter (ball and rotor), deceleration fit dω/dt = −(a+bω²), rotor fit, spin-phase detection | ✅ |
 | 4 | Drop-time projection (2 models, Monte Carlo), learned scatter, pocket probabilities, lock point, walk-forward scoring vs uniform | ✅ |
+| — | Results dashboard (default screen): history input, "Guess next 10" via physics Monte Carlo + model averaging vs uniform, heat grid, settings from the table guide | ✅ |
 | 5 | Rapier/Matter simulation adapters | next |
 | 6–9 | Supabase history, backtesting, sim lab, hardening | planned |
 

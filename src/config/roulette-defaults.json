@@ -1,0 +1,12 @@
+{
+  "_comment": "Default roulette settings taken from 'Roulette Game Guide (Jan) - How to play Roulette'. Edit this file when the guide changes; users can still override these in Settings (saved in their browser), and 'Reset to guide defaults' returns to the values here.",
+  "source": "Roulette Game Guide (Jan), How to play Roulette",
+  "defaultWheel": "european",
+  "wheels": {
+    "european": { "label": "Roulette (0–36)", "pockets": 37, "houseMargin": 0.027, "returnToPlayer": 0.973 },
+    "american": { "label": "00 Roulette (0, 00, 1–36)", "pockets": 38, "houseMargin": 0.0526, "returnToPlayer": 0.9474 }
+  },
+  "ballOppositeToWheel": true,
+  "ballDirection": "clockwise",
+  "simulations": 200000
+}
