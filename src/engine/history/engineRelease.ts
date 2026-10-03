@@ -6,13 +6,17 @@
  * drop speed are sampled from the settings, so each view is a landing
  * distribution from SIMULATION ONLY (not validated against the history).
  */
-import type { EngineKernel, EngineView, HistorySettings } from "@/types/history";
-import type { SimParams } from "@/types/simulation";
 import { mulberry32 } from "@/engine/math/random";
-import { pocketCount, pocketOrder } from "@/engine/wheel/layout";
 import { DEFAULT_SIM_PARAMS, G, GEOM } from "@/engine/physics/rouletteScene";
 import { runEngine } from "@/engine/physics/simulationAdapter";
 import { gaussian } from "@/engine/prediction/uncertaintyModel";
+import { pocketCount, pocketOrder } from "@/engine/wheel/layout";
+import type {
+  EngineKernel,
+  EngineView,
+  HistorySettings,
+} from "@/types/history";
+import type { SimParams } from "@/types/simulation";
 
 /** Track incline that makes the ball leave the track at |ω| = ωc. */
 export function inclineForDropSpeed(omegaC: number): number {
@@ -22,28 +26,47 @@ export function inclineForDropSpeed(omegaC: number): number {
 
 export const LONG_ROLL_S = 2.5;
 
-export function engineRunParams(settings: HistorySettings, lastIndex: number | null, seed: number, i: number): SimParams {
+export function engineRunParams(
+  settings: HistorySettings,
+  lastIndex: number | null,
+  seed: number,
+  i: number,
+): SimParams {
   const ph = settings.physics;
   const rnd = mulberry32((seed * 0x9e3779b1 + i * 0x85ebca6b) >>> 0);
   const n = pocketCount(settings.wheelType);
   const pitch = (2 * Math.PI) / n;
   // Rotor zero at angle 0 at launch; pocket k sits at −k·pitch. The ball is
   // released where the previous result is (± jitter), or anywhere if unknown.
-  const base = lastIndex === null ? 2 * Math.PI * rnd() : -lastIndex * pitch;
+  const anchorIndex = settings.startingPointIndex ?? lastIndex;
+  const base =
+    anchorIndex === null ? 2 * Math.PI * rnd() : -anchorIndex * pitch;
   const launchAngle = base + ph.releaseJitterPockets * pitch * gaussian(rnd);
   const omegaC = Math.max(1, ph.dropOmegaMean + ph.dropOmegaSd * gaussian(rnd));
   return {
     ...DEFAULT_SIM_PARAMS,
     wheelType: settings.wheelType,
     ballDirection: ph.ballDirection,
-    ballOmega0: Math.max(omegaC + 1, ph.ballOmegaMean + ph.ballOmegaSd * gaussian(rnd)),
-    rotorOmega0: Math.max(0, ph.rotorOmegaMean + ph.rotorOmegaSd * gaussian(rnd)),
+    ballOmega0: Math.max(
+      omegaC + 1,
+      ph.ballOmegaMean + ph.ballOmegaSd * gaussian(rnd),
+    ),
+    rotorOmega0: Math.max(
+      0,
+      ph.rotorOmegaMean + ph.rotorOmegaSd * gaussian(rnd),
+    ),
     rotorDecel: ph.rotorDecel,
     frictionA: ph.frictionA,
     dragB: ph.dragB,
     trackInclineDeg: inclineForDropSpeed(omegaC),
     // The cone below the track must be steeper than the track, or the ball circles it.
-    coneInclineDeg: Math.min(70, Math.max(DEFAULT_SIM_PARAMS.coneInclineDeg, inclineForDropSpeed(omegaC) + 15)),
+    coneInclineDeg: Math.min(
+      70,
+      Math.max(
+        DEFAULT_SIM_PARAMS.coneInclineDeg,
+        inclineForDropSpeed(omegaC) + 15,
+      ),
+    ),
     launchAngle,
     rotorPhase: 0,
     launchNoise: 0,
@@ -64,8 +87,21 @@ export function engineRunParams(settings: HistorySettings, lastIndex: number | n
  */
 
 /** Cache key: everything that changes an engine's kernel. */
-export function kernelKey(engine: EngineView["engine"], settings: HistorySettings, seed: number): string {
-  return JSON.stringify({ v: 2, engine, w: settings.wheelType, p: settings.physics, n: settings.engineRuns[engine], seed });
+export function kernelKey(
+  engine: EngineView["engine"],
+  settings: HistorySettings,
+  seed: number,
+): string {
+  return JSON.stringify({
+    v: 2,
+    engine,
+    w: settings.wheelType,
+    p: settings.physics,
+    wd: settings.wheelDirection,
+    sp: settings.startingPointIndex,
+    n: settings.engineRuns[engine],
+    seed,
+  });
 }
 
 export async function engineKernel(
@@ -80,7 +116,11 @@ export async function engineKernel(
   const runs = Math.max(1, settings.engineRuns[engine]);
   const offsetCounts = new Array<number>(n).fill(0);
   const pick = mulberry32((seed ^ 0x27d4eb2d) >>> 0);
-  let settled = 0, longRolls = 0, sumDrop = 0, nDrop = 0, sumSettle = 0;
+  let settled = 0,
+    longRolls = 0,
+    sumDrop = 0,
+    nDrop = 0,
+    sumSettle = 0;
   let error: string | null = null;
   for (let i = 0; i < runs; i++) {
     if (i % 5 === 4) {
@@ -88,7 +128,10 @@ export async function engineKernel(
       if (cancelled?.()) break;
     }
     const start = Math.floor(pick() * n);
-    const r = await runEngine(engine, engineRunParams(settings, start, seed, i));
+    const r = await runEngine(
+      engine,
+      engineRunParams(settings, start, seed, i),
+    );
     if (r.error && !r.ok && r.samples.length === 0) {
       error = r.error; // engine unavailable (e.g. package not installed)
       break;
@@ -102,7 +145,12 @@ export async function engineKernel(
       sumDrop += r.dropTimeS;
       nDrop++;
     }
-    if (r.settleTimeS !== null && r.dropTimeS !== null && r.settleTimeS - r.dropTimeS >= LONG_ROLL_S) longRolls++;
+    if (
+      r.settleTimeS !== null &&
+      r.dropTimeS !== null &&
+      r.settleTimeS - r.dropTimeS >= LONG_ROLL_S
+    )
+      longRolls++;
     onProgress?.(i + 1, runs);
   }
   return {
@@ -120,15 +168,27 @@ export async function engineKernel(
 }
 
 /** Instant view for the next spin given the last result (pure arithmetic, no simulation). */
-export function viewFromKernel(k: EngineKernel, values: readonly number[], wheelType: HistorySettings["wheelType"]): EngineView {
+export function viewFromKernel(
+  k: EngineKernel,
+  values: readonly number[],
+  wheelType: HistorySettings["wheelType"],
+  anchorIndex: number | null = null,
+): EngineView {
   const order = pocketOrder(wheelType);
   const n = order.length;
   const last = values.length ? values[values.length - 1]! : null;
-  const L = last === null ? null : order.indexOf(last);
+  const L =
+    anchorIndex !== null
+      ? anchorIndex
+      : last === null
+        ? null
+        : order.indexOf(last);
   const total = k.offsetCounts.reduce((a, b) => a + b, 0);
-  // Unknown last result: average over all start pockets → uniform.
+  // Unknown start anchor: average over all start pockets → uniform.
   const probs = Array.from({ length: n }, (_, j) =>
-    L === null || L < 0 || !total ? 1 / n : k.offsetCounts[(((j - L) % n) + n) % n]! / total,
+    L === null || L < 0 || !total
+      ? 1 / n
+      : k.offsetCounts[(((j - L) % n) + n) % n]! / total,
   );
   const ranked = probs
     .map((p, i) => ({ p, i }))
@@ -162,5 +222,9 @@ export async function engineView(
   onProgress?: (done: number, total: number) => void,
   cancelled?: () => boolean,
 ): Promise<EngineView> {
-  return viewFromKernel(await engineKernel(engine, settings, seed, onProgress, cancelled), values, settings.wheelType);
+  return viewFromKernel(
+    await engineKernel(engine, settings, seed, onProgress, cancelled),
+    values,
+    settings.wheelType,
+  );
 }

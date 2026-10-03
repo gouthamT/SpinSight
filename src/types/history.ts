@@ -62,6 +62,10 @@ export interface PhysicsSettings {
 export interface HistorySettings {
   wheelType: WheelType;
   simulations: number;
+  /** Optional anchor pocket index for the ball at the top of the wheel. When null, use the last result. */
+  startingPointIndex: number | null;
+  /** Direction sign of the rotor relative to the ball: 1 = counter-clockwise, -1 = clockwise. */
+  wheelDirection: -1 | 1;
   physics: PhysicsSettings;
   /** Spins simulated per guess by each physics engine view. */
   engineRuns: { kinematic: number; rapier: number; matter: number };
@@ -83,7 +87,11 @@ export interface EngineView {
   error: string | null;
 }
 
-export type HistoryModelId = "uniform" | "frequency" | "sequence-offset" | "physics-release";
+export type HistoryModelId =
+  | "uniform"
+  | "frequency"
+  | "sequence-offset"
+  | "physics-release";
 
 export interface HistoryModelReport {
   id: HistoryModelId;
@@ -153,13 +161,36 @@ export interface EngineKernel {
   error: string | null;
 }
 
-export type HistoryWorkerRequest = { type: "run"; values: number[]; settings: HistorySettings; seed: number; runId: number };
+export type HistoryWorkerRequest = {
+  type: "run";
+  values: number[];
+  settings: HistorySettings;
+  seed: number;
+  runId: number;
+};
 export type HistoryWorkerResponse =
   | { type: "result"; prediction: HistoryPrediction; runId: number }
   | { type: "error"; message: string; runId: number };
 
-export type KernelWorkerRequest = { type: "kernel"; engine: EngineView["engine"]; settings: HistorySettings; seed: number; jobId: number };
+export type KernelWorkerRequest = {
+  type: "kernel";
+  engine: EngineView["engine"];
+  settings: HistorySettings;
+  seed: number;
+  jobId: number;
+};
 export type KernelWorkerResponse =
-  | { type: "progress"; engine: EngineView["engine"]; done: number; total: number; jobId: number }
+  | {
+      type: "progress";
+      engine: EngineView["engine"];
+      done: number;
+      total: number;
+      jobId: number;
+    }
   | { type: "kernel"; kernel: EngineKernel; jobId: number }
-  | { type: "error"; engine: EngineView["engine"]; message: string; jobId: number };
+  | {
+      type: "error";
+      engine: EngineView["engine"];
+      message: string;
+      jobId: number;
+    };

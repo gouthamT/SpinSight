@@ -1,8 +1,15 @@
 "use client";
-import type { WheelType } from "@/types/roulette";
-import type { EngineKernel, EngineView, HistoryPrediction, HistorySettings, PhysicsSettings, PredictionLogEntry } from "@/types/history";
-import { DEFAULT_PHYSICS } from "@/engine/history/physicsRelease";
 import guide from "@/config/roulette-defaults.json";
+import { DEFAULT_PHYSICS } from "@/engine/history/physicsRelease";
+import type {
+  EngineKernel,
+  EngineView,
+  HistoryPrediction,
+  HistorySettings,
+  PhysicsSettings,
+  PredictionLogEntry,
+} from "@/types/history";
+import type { WheelType } from "@/types/roulette";
 
 /** localStorage persistence for the results dashboard (per browser). Every access is guarded. */
 const K = {
@@ -48,7 +55,12 @@ export const GUIDE_FACTS = {
 export const DEFAULT_SETTINGS: HistorySettings = {
   wheelType: guide.defaultWheel as WheelType,
   simulations: guide.simulations,
-  physics: { ...DEFAULT_PHYSICS, ballDirection: guide.ballDirection as PhysicsSettings["ballDirection"] },
+  startingPointIndex: null,
+  wheelDirection: guide.ballDirection === "clockwise" ? 1 : -1,
+  physics: {
+    ...DEFAULT_PHYSICS,
+    ballDirection: guide.ballDirection as PhysicsSettings["ballDirection"],
+  },
   engineRuns: { kinematic: 400, rapier: 60, matter: 120 },
 };
 
@@ -62,6 +74,9 @@ export const resultsStore = {
     return {
       ...DEFAULT_SETTINGS,
       ...s,
+      startingPointIndex:
+        s.startingPointIndex ?? DEFAULT_SETTINGS.startingPointIndex,
+      wheelDirection: s.wheelDirection ?? DEFAULT_SETTINGS.wheelDirection,
       physics: { ...DEFAULT_SETTINGS.physics, ...(s.physics ?? {}) },
       engineRuns: { ...DEFAULT_SETTINGS.engineRuns, ...(s.engineRuns ?? {}) },
     };
@@ -77,7 +92,8 @@ export const resultsStore = {
     const all = read<Record<string, EngineKernel>>(K.kernels, {});
     all[k.key] = k;
     const keys = Object.keys(all);
-    for (const old of keys.slice(0, Math.max(0, keys.length - 12))) delete all[old]; // keep the latest 12
+    for (const old of keys.slice(0, Math.max(0, keys.length - 12)))
+      delete all[old]; // keep the latest 12
     write(K.kernels, all);
   },
   loadRowOrder: () => read<string[]>(K.order, []),

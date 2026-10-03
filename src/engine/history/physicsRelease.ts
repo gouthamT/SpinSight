@@ -13,10 +13,10 @@
  * this kernel is close to uniform; it only concentrates if a dealer is
  * implausibly consistent. That is the honest physics.
  */
-import type { PhysicsSettings } from "@/types/history";
 import { mulberry32 } from "@/engine/math/random";
 import { thetaAt, timeToOmega } from "@/engine/physics/decelerationModel";
 import { gaussian } from "@/engine/prediction/uncertaintyModel";
+import type { PhysicsSettings } from "@/types/history";
 
 export const DEFAULT_PHYSICS: PhysicsSettings = {
   ballOmegaMean: 15,
@@ -50,12 +50,24 @@ export interface ReleaseKernel {
   meanDropTimeS: number;
 }
 
-export function releaseKernel(n: number, p: PhysicsSettings, simulations: number, seed: number): ReleaseKernel {
+export function releaseKernel(
+  n: number,
+  p: PhysicsSettings,
+  simulations: number,
+  seed: number,
+  _startingPointIndex: number | null = null,
+  wheelDirection: -1 | 1 = p.ballDirection === "clockwise" ? 1 : -1,
+): ReleaseKernel {
   const rnd = mulberry32(seed);
   const counts = new Float64Array(n);
-  const sign = p.ballDirection === "clockwise" ? 1 : -1; // printed sequence runs clockwise
+  const ballSign = p.ballDirection === "clockwise" ? -1 : 1;
+  const wheelSign = wheelDirection ?? -ballSign;
+  const relativeSign = ballSign * wheelSign;
   const law = { a: Math.max(p.frictionA, 1e-4), b: Math.max(p.dragB, 1e-6) };
-  let st = 0, st2 = 0, sT = 0, used = 0;
+  let st = 0,
+    st2 = 0,
+    sT = 0,
+    used = 0;
   for (let s = 0; s < simulations; s++) {
     const wc = Math.max(0.5, p.dropOmegaMean + p.dropOmegaSd * gaussian(rnd));
     const wb = p.ballOmegaMean + p.ballOmegaSd * gaussian(rnd);
@@ -70,11 +82,13 @@ export function releaseKernel(n: number, p: PhysicsSettings, simulations: number
     // Ball and rotor turn in opposite directions: relative travel adds.
     const travelPockets = ((ballTravel + rotorTravel) * n) / (2 * Math.PI);
     let offset = travelPockets + p.releaseJitterPockets * gaussian(rnd);
-    if (rnd() < p.deflectorHitProb) offset += p.deflectorKickMean + p.deflectorKickSd * gaussian(rnd);
+    if (rnd() < p.deflectorHitProb)
+      offset += p.deflectorKickMean + p.deflectorKickSd * gaussian(rnd);
     offset += Math.max(0, p.bounceMean + p.bounceSd * gaussian(rnd));
     // Long roll: the ball keeps circling before it finally drops into a number.
-    if (p.longRollProb > 0 && rnd() < p.longRollProb) offset += -p.longRollMeanPockets * Math.log(Math.max(rnd(), 1e-12));
-    const d = ((Math.round(sign * offset) % n) + n) % n;
+    if (p.longRollProb > 0 && rnd() < p.longRollProb)
+      offset += -p.longRollMeanPockets * Math.log(Math.max(rnd(), 1e-12));
+    const d = ((Math.round(relativeSign * offset) % n) + n) % n;
     counts[d]! += 1;
     st += travelPockets;
     st2 += travelPockets * travelPockets;
@@ -88,7 +102,9 @@ export function releaseKernel(n: number, p: PhysicsSettings, simulations: number
     stdError: kernel.map((q) => (used ? Math.sqrt((q * (1 - q)) / used) : 0)),
     simulations: used,
     meanTravelPockets: mean,
-    sdTravelPockets: used ? Math.sqrt(Math.max(0, st2 / used - mean * mean)) : 0,
+    sdTravelPockets: used
+      ? Math.sqrt(Math.max(0, st2 / used - mean * mean))
+      : 0,
     meanDropTimeS: used ? sT / used : 0,
   };
 }

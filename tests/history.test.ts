@@ -1,15 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { parseHistory, formatHistory } from "@/engine/history/parseHistory";
-import { chiSquareUniform, gammaQ } from "@/engine/history/stats";
-import { DEFAULT_PHYSICS, releaseKernel } from "@/engine/history/physicsRelease";
 import { predictFromHistory } from "@/engine/history/historyPredictor";
-import { EUROPEAN_ORDER, DOUBLE_ZERO, TRIPLE_ZERO } from "@/engine/wheel/layout";
+import { formatHistory, parseHistory } from "@/engine/history/parseHistory";
+import {
+  DEFAULT_PHYSICS,
+  releaseKernel,
+} from "@/engine/history/physicsRelease";
+import { chiSquareUniform, gammaQ } from "@/engine/history/stats";
 import { mulberry32 } from "@/engine/math/random";
+import {
+  DOUBLE_ZERO,
+  EUROPEAN_ORDER,
+  TRIPLE_ZERO,
+} from "@/engine/wheel/layout";
 import type { HistorySettings } from "@/types/history";
+import { describe, expect, it } from "vitest";
 
 const settings = (over: Partial<HistorySettings> = {}): HistorySettings => ({
   wheelType: "european",
   simulations: 40000,
+  startingPointIndex: null,
+  wheelDirection: 1,
   physics: DEFAULT_PHYSICS,
   engineRuns: { kinematic: 50, rapier: 10, matter: 10 },
   ...over,
@@ -25,7 +34,11 @@ describe("parseHistory", () => {
     expect(parseHistory("00", "european").errors).toHaveLength(1);
     expect(parseHistory("00 5", "american").values).toEqual([DOUBLE_ZERO, 5]);
     expect(parseHistory("000", "american").errors).toHaveLength(1);
-    expect(parseHistory("000 00 0", "triple-zero").values).toEqual([TRIPLE_ZERO, DOUBLE_ZERO, 0]);
+    expect(parseHistory("000 00 0", "triple-zero").values).toEqual([
+      TRIPLE_ZERO,
+      DOUBLE_ZERO,
+      0,
+    ]);
   });
   it("explains invalid tokens with positions", () => {
     const p = parseHistory("5, 37 abc 07", "european");
@@ -35,7 +48,9 @@ describe("parseHistory", () => {
     expect(p.errors[2]!.error).toContain("leading zero");
   });
   it("round-trips through formatHistory", () => {
-    expect(formatHistory(parseHistory("000 00 7", "triple-zero").values)).toBe("000 00 7");
+    expect(formatHistory(parseHistory("000 00 7", "triple-zero").values)).toBe(
+      "000 00 7",
+    );
   });
 });
 
@@ -58,12 +73,22 @@ describe("physics release kernel", () => {
     expect(Math.max(...k.kernel) / (1 / 37)).toBeLessThan(1.15);
   });
   it("concentrates only for an implausibly consistent dealer", () => {
-    const p = { ...DEFAULT_PHYSICS, ballOmegaSd: 0.001, rotorOmegaSd: 0.001, dropOmegaSd: 0.001, releaseJitterPockets: 0.3, deflectorHitProb: 0, bounceSd: 0.5 };
+    const p = {
+      ...DEFAULT_PHYSICS,
+      ballOmegaSd: 0.001,
+      rotorOmegaSd: 0.001,
+      dropOmegaSd: 0.001,
+      releaseJitterPockets: 0.3,
+      deflectorHitProb: 0,
+      bounceSd: 0.5,
+    };
     const k = releaseKernel(37, p, 20000, 2);
     expect(Math.max(...k.kernel)).toBeGreaterThan(0.3);
   });
   it("is deterministic for a seed", () => {
-    expect(releaseKernel(37, DEFAULT_PHYSICS, 5000, 9).kernel).toEqual(releaseKernel(37, DEFAULT_PHYSICS, 5000, 9).kernel);
+    expect(releaseKernel(37, DEFAULT_PHYSICS, 5000, 9).kernel).toEqual(
+      releaseKernel(37, DEFAULT_PHYSICS, 5000, 9).kernel,
+    );
   });
 });
 
@@ -97,41 +122,78 @@ describe("predictFromHistory", () => {
     const tot = w.reduce((a, b) => a + b, 0);
     const hist = Array.from({ length: 2000 }, () => {
       let u = r() * tot;
-      for (let i = 0; i < 37; i++) if ((u -= w[i]!) < 0) return EUROPEAN_ORDER[i]!;
+      for (let i = 0; i < 37; i++)
+        if ((u -= w[i]!) < 0) return EUROPEAN_ORDER[i]!;
       return 0;
     });
     const p = predictFromHistory(hist, settings(), 3);
     expect(p.verdict).toBe("strong");
     expect(p.top10[0]!.pocket).toBe(17);
     expect(p.chiSquare!.pValue).toBeLessThan(1e-6);
-    expect(p.models.find((m) => m.id === "frequency")!.weight).toBeGreaterThan(0.9);
+    expect(p.models.find((m) => m.id === "frequency")!.weight).toBeGreaterThan(
+      0.9,
+    );
   });
 
   it("detects a release signature (next ≈ previous + 10 pockets ± 1)", () => {
     const r = mulberry32(8);
     const idx = [0];
-    for (let t = 1; t < 400; t++) idx.push((idx[t - 1]! + 10 + Math.round((r() - 0.5) * 3) + 37) % 37);
+    for (let t = 1; t < 400; t++)
+      idx.push((idx[t - 1]! + 10 + Math.round((r() - 0.5) * 3) + 37) % 37);
     const hist = idx.map((i) => EUROPEAN_ORDER[i]!);
     const p = predictFromHistory(hist, settings(), 4);
-    expect(p.models.find((m) => m.id === "sequence-offset")!.weight).toBeGreaterThan(0.9);
+    expect(
+      p.models.find((m) => m.id === "sequence-offset")!.weight,
+    ).toBeGreaterThan(0.9);
     const expected = EUROPEAN_ORDER[(idx.at(-1)! + 10) % 37]!;
     expect(p.top10.slice(0, 3).map((x) => x.pocket)).toContain(expected);
   });
 
   it("probabilities sum to 1 and ranks are descending", () => {
-    const p = predictFromHistory(fairHistory(200, 3), settings({ wheelType: "european" }), 7);
+    const p = predictFromHistory(
+      fairHistory(200, 3),
+      settings({ wheelType: "european" }),
+      7,
+    );
     expect(p.probs.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
-    for (let i = 1; i < p.ranked.length; i++) expect(p.ranked[i - 1]!.probability).toBeGreaterThan(p.ranked[i]!.probability - 1e-15);
+    for (let i = 1; i < p.ranked.length; i++)
+      expect(p.ranked[i - 1]!.probability).toBeGreaterThan(
+        p.ranked[i]!.probability - 1e-15,
+      );
   });
 
   it("supports American and triple-zero wheels", () => {
-    expect(predictFromHistory([DOUBLE_ZERO, 5, 0], settings({ wheelType: "american" }), 1).probs).toHaveLength(38);
-    expect(predictFromHistory([TRIPLE_ZERO, 5, 0], settings({ wheelType: "triple-zero" }), 1).probs).toHaveLength(39);
+    expect(
+      predictFromHistory(
+        [DOUBLE_ZERO, 5, 0],
+        settings({ wheelType: "american" }),
+        1,
+      ).probs,
+    ).toHaveLength(38);
+    expect(
+      predictFromHistory(
+        [TRIPLE_ZERO, 5, 0],
+        settings({ wheelType: "triple-zero" }),
+        1,
+      ).probs,
+    ).toHaveLength(39);
+  });
+
+  it("uses a custom start pocket as the distribution anchor", () => {
+    const p = predictFromHistory(
+      [17, 4, 22],
+      settings({ startingPointIndex: 10 }),
+      1,
+    );
+    expect(p.settings.startingPointIndex).toBe(10);
+    expect(p.probs).toHaveLength(37);
+    expect(p.probs.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 10);
   });
 });
 
 describe("engine kernels (instant guesses)", async () => {
-  const { engineKernel, viewFromKernel, kernelKey } = await import("@/engine/history/engineRelease");
+  const { engineKernel, viewFromKernel, kernelKey } =
+    await import("@/engine/history/engineRelease");
   const s = settings({ engineRuns: { kinematic: 60, rapier: 10, matter: 10 } });
   const k = await engineKernel("kinematic", s, 7);
   it("records one offset per settled run", () => {
@@ -142,11 +204,18 @@ describe("engine kernels (instant guesses)", async () => {
     const a = viewFromKernel(k, [0], "european");
     const b = viewFromKernel(k, [32], "european"); // 32 is one pocket after 0 on the wheel
     expect(a.probs.reduce((x, y) => x + y, 0)).toBeCloseTo(1, 9);
-    for (let j = 0; j < 37; j++) expect(b.probs[(j + 1) % 37]).toBeCloseTo(a.probs[j]!, 12);
+    for (let j = 0; j < 37; j++)
+      expect(b.probs[(j + 1) % 37]).toBeCloseTo(a.probs[j]!, 12);
   });
   it("is deterministic and keyed by settings", () => {
     expect(kernelKey("kinematic", s, 7)).toBe(k.key);
     expect(kernelKey("kinematic", { ...s, simulations: 1 }, 7)).toBe(k.key); // quick-physics samples don't affect engines
-    expect(kernelKey("kinematic", { ...s, physics: { ...s.physics, ballOmegaMean: 16 } }, 7)).not.toBe(k.key);
+    expect(
+      kernelKey(
+        "kinematic",
+        { ...s, physics: { ...s.physics, ballOmegaMean: 16 } },
+        7,
+      ),
+    ).not.toBe(k.key);
   });
 });
