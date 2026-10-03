@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { HistoryPrediction } from "@/types/history";
+import type { EngineView, HistoryPrediction, RankedPocket } from "@/types/history";
 import { pocketColour, pocketLabel, pocketOrder, WHEEL_LABEL } from "@/engine/wheel/layout";
 
 const pct = (p: number, d = 2) => `${(p * 100).toFixed(d)}%`;
@@ -35,13 +35,14 @@ export function heatColour(p: number, base: number, maxDev: number): { bg: strin
   return { bg: `rgb(${c[0]},${c[1]},${c[2]})`, fg: lum > 150 ? "#0b0f14" : "#ffffff" };
 }
 
-function HeatGrid({ p }: { p: HistoryPrediction }) {
+export function HeatGrid({ ranked, baseline, compact = false }: { ranked: RankedPocket[]; baseline: number; compact?: boolean }) {
+  const p = { ranked, baseline };
   const maxDev = Math.max(...p.ranked.map((r) => Math.abs(r.probability - p.baseline)));
   const noise = Math.max(...p.ranked.map((r) => r.stdError));
   const withinNoise = maxDev < 2 * noise;
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-10">
+      <div className={`grid gap-1.5 ${compact ? "grid-cols-6 sm:grid-cols-8 xl:grid-cols-6" : "grid-cols-6 sm:grid-cols-10"}`}>
         {p.ranked.map((r) => {
           const c = heatColour(r.probability, p.baseline, maxDev);
           return (
@@ -51,7 +52,7 @@ function HeatGrid({ p }: { p: HistoryPrediction }) {
               style={{ background: c.bg, color: c.fg }}
               title={`#${r.rank} · ${pocketLabel(r.pocket)}: ${pct(r.probability)} (baseline ${pct(p.baseline)})`}
             >
-              <span className="num text-lg font-bold leading-none">{pocketLabel(r.pocket)}</span>
+              <span className={`num font-bold leading-none ${compact ? "text-base" : "text-lg"}`}>{pocketLabel(r.pocket)}</span>
               <span className="num mt-1 text-[10px] opacity-80">{pct(r.probability, 1)}</span>
             </div>
           );
@@ -84,25 +85,38 @@ const VERDICT_STYLE: Record<HistoryPrediction["verdict"], string> = {
   strong: "border-accent/50 bg-accent/10 text-accent",
 };
 
-export function copyText(p: HistoryPrediction): string {
+export function copyText(p: HistoryPrediction, engines: EngineView[] = []): string {
   const lines = [
     `SpinSight: next-number estimate (experimental model, not a verified prediction)`,
     `${WHEEL_LABEL[p.wheelType]} · history ${p.historyLength} results · ${p.simulations.toLocaleString()} simulations · seed ${p.seed}`,
     `Uniform baseline: ${pct(p.baseline)} per pocket. Verdict: ${p.verdictText}`,
     ...p.top10.map((r) => `${r.rank}. ${pocketLabel(r.pocket)}  ${pct(r.probability)} (±${pct(r.stdError)})`),
     `Top-10 total: ${pct(p.top10Mass, 1)} (uniform: ${pct(p.baseline * p.top10.length, 1)})`,
+    ...engines.flatMap((v) => [
+      ``,
+      `${ENGINE_NAMES[v.engine]} simulation (${v.settled}/${v.runs} runs settled, simulation only):`,
+      v.ranked.slice(0, 10).map((r) => `${pocketLabel(r.pocket)} ${pct(r.probability, 1)}`).join(", "),
+    ]),
   ];
   return lines.join("\n");
 }
+
+export const ENGINE_NAMES: Record<EngineView["engine"], string> = {
+  kinematic: "Kinematic reference",
+  rapier: "Rapier.js",
+  matter: "Matter.js",
+};
 
 export function PredictionResults({
   p,
   onRunAgain,
   running,
+  engines = [],
 }: {
   p: HistoryPrediction;
   onRunAgain: () => void;
   running: boolean;
+  engines?: EngineView[];
 }) {
   const [showAll, setShowAll] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -113,7 +127,7 @@ export function PredictionResults({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(copyText(p));
+      await navigator.clipboard.writeText(copyText(p, engines));
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -125,7 +139,7 @@ export function PredictionResults({
     <section className="panel space-y-5 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Next 10 candidates</h2>
+          <h2 className="text-lg font-semibold">Combined statistics view · next 10 candidates</h2>
           <p className="text-xs text-ink-400">
             Experimental model output · {new Date(p.createdAt).toLocaleString()} · from {p.historyLength} results
             {p.lastResult !== null ? <> · last result <span className="num text-ink-200">{pocketLabel(p.lastResult)}</span></> : null}
@@ -144,7 +158,7 @@ export function PredictionResults({
         <p className="mt-0.5 text-xs opacity-90">{p.verdictText}</p>
       </div>
 
-      <HeatGrid p={p} />
+      <HeatGrid ranked={p.ranked} baseline={p.baseline} />
 
       <h3 className="pt-2 text-sm font-semibold text-ink-200">Top 10 in detail</h3>
       <ol className="grid gap-2 sm:grid-cols-2">
@@ -247,3 +261,4 @@ export function PredictionResults({
     </section>
   );
 }
+

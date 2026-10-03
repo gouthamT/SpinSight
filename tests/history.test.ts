@@ -11,6 +11,7 @@ const settings = (over: Partial<HistorySettings> = {}): HistorySettings => ({
   wheelType: "european",
   simulations: 40000,
   physics: DEFAULT_PHYSICS,
+  engineRuns: { kinematic: 50, rapier: 10, matter: 10 },
   ...over,
 });
 

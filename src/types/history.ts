@@ -48,6 +48,13 @@ export interface PhysicsSettings {
   /** Travel while bouncing over the frets before settling (pockets): mean and SD. */
   bounceMean: number;
   bounceSd: number;
+  /**
+   * Long roll: sometimes the ball keeps rolling around the cone / pocket ring
+   * before it finally drops into a number. With this probability an extra
+   * travel ~ Exponential(mean) is added.
+   */
+  longRollProb: number;
+  longRollMeanPockets: number;
   /** Ball direction on the wheel as printed (clockwise is usual when the rotor turns counter-clockwise). */
   ballDirection: "clockwise" | "counter-clockwise";
 }
@@ -56,6 +63,24 @@ export interface HistorySettings {
   wheelType: WheelType;
   simulations: number;
   physics: PhysicsSettings;
+  /** Spins simulated per guess by each physics engine view. */
+  engineRuns: { kinematic: number; rapier: number; matter: number };
+}
+
+/** Landing distribution for the next spin from one physics engine (simulation only). */
+export interface EngineView {
+  engine: "kinematic" | "rapier" | "matter";
+  runs: number;
+  settled: number;
+  probs: number[];
+  ranked: RankedPocket[];
+  meanDropS: number | null;
+  meanSettleS: number | null;
+  /** Share of runs with a long roll: ≥ 2.5 s between leaving the track and landing in a number. */
+  longRollShare: number;
+  lastResult: number | null;
+  elapsedMs: number;
+  error: string | null;
 }
 
 export type HistoryModelId = "uniform" | "frequency" | "sequence-offset" | "physics-release";
@@ -114,7 +139,9 @@ export interface PredictionLogEntry {
   probOfActual: number | null;
 }
 
-export type HistoryWorkerRequest = { type: "run"; values: number[]; settings: HistorySettings; seed: number };
+export type HistoryWorkerRequest = { type: "run"; values: number[]; settings: HistorySettings; seed: number; runId: number };
 export type HistoryWorkerResponse =
-  | { type: "result"; prediction: HistoryPrediction }
-  | { type: "error"; message: string };
+  | { type: "result"; prediction: HistoryPrediction; runId: number }
+  | { type: "engine-progress"; engine: EngineView["engine"]; done: number; total: number; runId: number }
+  | { type: "engine"; view: EngineView; runId: number }
+  | { type: "error"; message: string; runId: number };

@@ -1,6 +1,6 @@
 # SpinSight: Design Document & Handoff
 
-_Last updated: 3 Oct 2026 · State: Phases 1–4 complete plus the results dashboard (default screen); Phase 5 next · Model version tag: `p4-ensemble-0.1`_
+_Last updated: 3 Oct 2026 · State: Phases 1–5 complete plus the results dashboard (default screen); Phase 6 next · Model version tag: `p4-ensemble-0.1`_
 
 This document is the single source of truth for continuing the project in a new session or by a new engineer. Read it together with `CLAUDE.md` (working rules) and `README.md` (run/deploy).
 
@@ -206,29 +206,63 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
 - **No history:** the scatter kernel is uniform, so the landing distribution is exactly 1/N. This is tested.
 
 ### 5.9 Results dashboard (default screen, `/dashboard`)
-- **Inputs:** results typed oldest → newest, validated per wheel (European 0–36, American plus 00, triple zero plus 00 and 000; 00 = −1, 000 = −2). Invalid tokens are highlighted in place with a mirrored backdrop and explained. Valid text auto-saves to localStorage.
-- **"Guess next 10"** runs `historySim.worker.ts` → `predictFromHistory`, which combines four models by **Bayesian model averaging, using walk-forward (prequential) likelihood on the user's own history**:
+- **Layout (kept deliberately simple, as requested):**
+  - the results text area, which auto-saves with a 400 ms debounce
+  - a **Clear** button at the right end of the header
+  - one **Guess** button
+  - then **one row of 10 numbers per algorithm or pattern**, shaded dark green (strongest) → dark red (weakest) within that row. The rows are Combined, Hot numbers (frequency), Sequence pattern (offset), Physics (quick), Kinematic engine, Rapier.js engine and Matter.js engine.
+  - a single honesty line with the verdict and the 1/N baseline
+  - **No** wheel dropdown on the dashboard: the wheel comes from Settings, defaulting to the guide's single-zero wheel. **No** run-again, copy, top-10 detail or update-results sections.
+- **Inputs:** results typed oldest → newest, validated per wheel (European 0–36, American plus 00, triple zero plus 00 and 000; 00 = −1, 000 = −2). Invalid tokens are highlighted in place with a mirrored backdrop and explained.
+- **Guess** runs `historySim.worker.ts` → `predictFromHistory`, which combines four models by **Bayesian model averaging, using walk-forward (prequential) likelihood on the user's own history**:
   1. **uniform**
   2. **frequency:** Dirichlet(1) on pocket counts, i.e. wheel bias
   3. **sequence-offset:** Dirichlet(1) on the wheel distance between consecutive results, i.e. release signature
   4. **physics-release:** seeded Monte Carlo. The ball is released from the previous result's pocket with the configured launch and rotor speed spreads, the deceleration law to the drop speed, a deflector hit, and fret bounce, giving a kernel over offsets.
-- **Outputs:**
-  - all pockets ranked, shown as a green-to-red heat grid relative to the baseline, with a noise warning
-  - top-10 tiles with bars and the baseline marker
-  - the full distribution in wheel order
-  - a χ² uniformity test and 2·ln BF evidence against uniform
-  - a verdict: insufficient-data, no-evidence, weak, moderate or strong
-  - copy and run-again buttons
-- **Update results:** appends the actual result and scores the previous guess. The guess record shows top-10 hits and the mean probability of the actual result, each against chance.
+- **Computed but not displayed:** the χ² uniformity test, 2·ln BF evidence against uniform, and per-model walk-forward log loss and top-10 rate. These are still in `HistoryPrediction` and drive the verdict text. (`PredictionResults.tsx` keeps the reusable heat-colour and tile helpers.)
 - **Honest behaviour (tested):**
   - fair 1000-spin histories stay within 1.25× of uniform with no-evidence or weak verdicts
   - a 3×-biased pocket over 2000 spins is detected as strong and ranked #1
   - a synthetic +10-pocket signature is detected
   - with realistic launch-speed spread the physics kernel is within 15% of uniform (about 250 pockets of relative travel)
 - **Settings page** (`/settings`, localStorage): defaults live in `src/config/roulette-defaults.json`, taken from the venue's Roulette guide. Single-zero 0–36 (37 pockets) is standard and 00 is the variant; ball and wheel spin in opposite directions; house margin 2.70% and 5.26% (RTP 97.30% and 94.74%) shown for reference. Physics speeds are generic assumptions, because the guide gives none.
+- **Three physics-engine rows** (`engine/history/engineRelease.ts`):
+  - Kinematic, Rapier.js and Matter.js each simulate full spins launched from the last result's pocket (± release jitter), with launch, wheel and drop speeds sampled from Settings. Each run continues until the ball settles in a number.
+  - Defaults are 400 / 60 / 120 spins per guess; they're computed in the worker and streamed to the page as each engine finishes.
+  - A newer guess cancels an older one (`runId`).
+  - Each row shows the engine's 10 most frequent landing numbers. The full `EngineView` (settled count, long-roll share, drop and landing times) is kept in localStorage. These are simulation only and aren't scored against the history.
+- **Long roll:** the ball sometimes keeps rolling before it drops into a number.
+  - In the quick physics model: with probability `longRollProb` (default 0.15), extra travel ~ Exponential(`longRollMeanPockets` = 30) is added.
+  - In the engines it happens physically; a run counts as a long roll when ≥ 2.5 s pass between leaving the track and landing in a number.
+  - Both settings are editable in Settings.
 - **Deliberately not built:** live entry of the ball's start position or spin direction during a spin for in-casino use (see the use boundary in §1).
 
-### 5.10 Synthetic wheel (test oracle)
+### 5.10 Simulation adapters & lab (Phase 5)
+- **Shared scene** (`engine/physics/rouletteScene.ts`), 2-D top-down in SI units:
+  - rim 0.40 m, ball 21 mm, track inner 0.34, deflector ring 0.29 (n diamonds), pocket ring 0.23 → turret 0.18 with N frets
+  - **Slopes are forces:** an inward pull of g·tanδ (track 30°, cone 45°: with 35° every ball circled the cone for about 3.9 s, while 45° gives a realistic 0.6–1.3 s from drop to landing). The ball rides the rim while v²/r > g·tanδ and leaves by itself, so ω_c = √(g·tanδ/r) emerges. Tested within 10%.
+  - The bowl applies the law r·(a + bω²) as a tangential deceleration. The rotor drags the ball toward its surface velocity.
+  - The rim is a **shared smooth-wall constraint** that keeps speed. A polygonal rim collider caused "ghost" bounces at segment joints in both engines (ball off the track within 20 ms), and projecting the velocity added a spurious ω³·dt/2 deceleration. Both were fixed this way.
+- **Adapters, each run separately on identical parameters:**
+  - `trajectoryModel.ts`: kinematic reference with idealised deflector and fret rules (about 3 ms per spin)
+  - `rapierEngine.ts`: `@dimforge/rapier2d-compat` 0.21; fixed deflectors, a kinematic velocity-based rotor (turret disc + frets), CCD on the ball (about 100–400 ms per spin)
+  - `matterEngine.ts`: `matter-js` 0.20; 1 m = 1000 units, velocities in units per base step, the rotor a static compound rotated with `updateVelocity` so the solver sees the moving surface (about 35–90 ms per spin)
+- **Engine differences observed (seed 11, 40 runs each):**
+  - kinematic and Matter leave the track at 12.37 ± 0.16 s; Rapier at 13.09 ± 0.16 s, staying on the wall about 0.7 s longer because ω differs by about 2% near ω_c
+  - every run settled in all three engines
+  - the landing distributions are noisy and near-uniform with random launch phases, as expected
+- **Accuracy limit:** the time-stepping error is first-order in dt, about 1.4% in ω after 6 s at dt = 1/480 s.
+- **`/simulation` page:**
+  - parameters saved in localStorage
+  - side-by-side top-down replays with a shared timeline
+  - ω(t) for each engine
+  - batch comparison with landing histograms, drop-time spread and the Jensen–Shannon disagreement between engines
+  - runs in `simulation.worker.ts`
+- **Tests:**
+  - `tests/physics.test.ts` (kinematic, runs anywhere)
+  - `tests/engines.test.ts` (Rapier and Matter: law within ±2%, drop near ω_c, settles), which needs the packages installed
+
+### 5.11 Synthetic wheel (test oracle)
 - **Camera:** in-plane rotation, foreshortening, and an optional projective term.
 - **Spin generator:**
   - track phase: `ω̇ = −(a + bω²)·sgn ω` with a = 0.3 and b = 0.011
@@ -244,7 +278,7 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
 
 ## 6. Verification status
 
-Automated: **78 tests pass** (incl. `tests/history`) (`tests/angles`, `layout`, `ellipse`, `tracking`, `kalman`, `deceleration`, `motion`, `prediction`). End-to-end synthetic scenarios:
+Automated: **84 tests pass** in the cloud workspace (incl. `tests/history`, `tests/physics`), plus **6 engine tests** (`tests/engines`) run against Rapier.js and Matter.js from your installed packages (`tests/angles`, `layout`, `ellipse`, `tracking`, `kalman`, `deceleration`, `motion`, `prediction`). End-to-end synthetic scenarios:
 
 | Scenario | Rotor err p95 | Ball-rel-rotor err p95 | Track detection | Settled pocket |
 |---|---|---|---|---|
@@ -341,14 +375,14 @@ Building blocks already in place: `decelerationModel.ts` (`timeToOmega`, `thetaA
 - **Lock point:** configurable, either a ball radius threshold or a number of seconds before the predicted drop. The prediction is frozen and timestamped at the lock.
 - **UI:** a ring heatmap overlay on the wheel and a bar chart of probabilities, always with the 1/N baseline line drawn.
 
-### Phase 5: Physics simulation adapters (NEXT)
+### Phase 5: Physics simulation adapters (DONE: see §5.10; the 2-D top-down scene was chosen over a 3-D trimesh bowl)
 - Common interface: `SimulationAdapter { id; run(params: SimParams, seed: number): SimResult }`, where `SimResult` holds a θ/r timeline, the drop time and the final pocket.
 - `rapierEngine.ts`: 3D bowl (track cone plus deflectors plus pocket frets as trimesh), rotating rotor body, ball sphere, gravity, restitution and friction.
 - `matterEngine.ts`: 2D top-down approximation. Track slope is emulated as a radial inward force, frets and deflectors as static or kinematic bodies.
 - Both run in `simulation.worker.ts`. Compare them with Model B and the synthetic generator.
 - Never assume either engine matches a real wheel; fit parameters to recorded spins.
 
-### Phase 6: History & storage
+### Phase 6: History & storage (NEXT)
 - Persist each spin as a `SpinRecord`, its raw `FrameMeasurement[]` (gzipped JSON, held in IndexedDB and uploaded to Supabase Storage bucket `spin-frames`) and its calibration.
 - **Supabase access** goes through server route handlers that use the service-role key, which is kept server-only. RLS is already enabled.
 - **Actual pocket entry:** manual entry, plus the automatic "pocket under ball when settled" with a confirmation step.
@@ -404,6 +438,8 @@ Building blocks already in place: `decelerationModel.ts` (`timeToOmega`, `thetaA
 | D15 | Separate real and synthetic profiles | Synthetic spins must never inflate a real wheel's learned scatter |
 | D16 | Live scoring is walk-forward by construction | The profile used for spin k contains only spins < k |
 | D17 | History dashboard uses prequential BMA including "uniform" | Past results of a fair wheel carry no information; the model must be able to say so |
+| D19 | Both engines use 2-D top-down scenes with slope forces | A 3-D bowl would need tuned trimesh geometry with no data to validate it; 2-D keeps the engines comparable and fast enough for batches |
+| D20 | Smooth rim constraint shared by all adapters | Polygonal rims caused ghost bounces; the rim is not where engines should differ |
 | D18 | No live ball-position or direction input for casino use | Would be a prediction device at a table, illegal under NSW/Qld casino law; also no informational value without measured speeds |
 
 ---
@@ -418,4 +454,4 @@ Building blocks already in place: `decelerationModel.ts` (`timeToOmega`, `thetaA
    - Live analysis → Synthetic wheel → Start
    - check the overlay and readouts
 4. Commit `package-lock.json`.
-5. Start Phase 5 following §8. Keep the conventions in §3 and add tests for every new estimator, using the synthetic generator as the oracle. Never tune the predictor on the synthetic generator's own parameters and then report it as accuracy on real wheels.
+5. Start Phase 6 following §8. Keep the conventions in §3 and add tests for every new estimator, using the synthetic generator as the oracle. Never tune the predictor on the synthetic generator's own parameters and then report it as accuracy on real wheels.

@@ -21,6 +21,8 @@ const PHYSICS_FIELDS: { key: keyof PhysicsSettings; label: string; unit: string;
   { key: "deflectorKickSd", label: "Deflector kick (SD)", unit: "pockets", step: 0.5 },
   { key: "bounceMean", label: "Fret bounce travel (mean)", unit: "pockets", step: 0.5 },
   { key: "bounceSd", label: "Fret bounce travel (SD)", unit: "pockets", step: 0.5 },
+  { key: "longRollProb", label: "Long-roll chance (ball keeps rolling before landing)", unit: "0–1", step: 0.05 },
+  { key: "longRollMeanPockets", label: "Long-roll extra travel (mean)", unit: "pockets", step: 1 },
 ];
 
 /** Settings tab: defaults from the table guide, editable, persisted in localStorage. */
@@ -90,8 +92,18 @@ export function SettingsPanel() {
             </select>
             <span className="block text-[11px] text-ink-400">Wheel spins the opposite way: {wheelDirection.toLowerCase()}.</span>
           </label>
+          {(["kinematic", "rapier", "matter"] as const).map((e) => (
+            <label key={e} className="space-y-1">
+              <span className="text-xs text-ink-300">
+                {e === "kinematic" ? "Kinematic" : e === "rapier" ? "Rapier.js" : "Matter.js"} engine: full spins per guess
+              </span>
+              <select className="input" value={s.engineRuns[e]} onChange={(ev) => save({ ...s, engineRuns: { ...s.engineRuns, [e]: Number(ev.target.value) } })}>
+                {(e === "kinematic" ? [100, 200, 400, 1000, 2000] : [20, 40, 60, 120, 240]).map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
+          ))}
           <label className="space-y-1">
-            <span className="text-xs text-ink-300">Simulations per guess</span>
+            <span className="text-xs text-ink-300">Quick physics samples per guess</span>
             <select className="input" value={s.simulations} onChange={(e) => save({ ...s, simulations: Number(e.target.value) })}>
               {[20_000, 50_000, 200_000, 500_000, 1_000_000].map((v) => <option key={v} value={v}>{v.toLocaleString()}</option>)}
             </select>

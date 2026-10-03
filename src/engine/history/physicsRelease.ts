@@ -2,7 +2,8 @@
  * Physics Monte Carlo for a spin whose ball is released from where the
  * PREVIOUS result landed (the only physical link between consecutive spins
  * when no speeds are measured). Each run samples launch speeds, the drop
- * speed, deflector strikes and fret bounces from the configured assumptions,
+ * speed, deflector strikes, fret bounces and occasional long rolls (the ball
+ * circling on before it finally drops into a number) from the configured assumptions,
  * integrates the ball's deceleration law dω/dt = −(a + bω²) and the rotor's
  * slow-down in closed form, and records how many pockets the result moved
  * relative to the previous one.
@@ -33,6 +34,8 @@ export const DEFAULT_PHYSICS: PhysicsSettings = {
   deflectorKickSd: 4,
   bounceMean: 6,
   bounceSd: 5,
+  longRollProb: 0.15,
+  longRollMeanPockets: 30,
   ballDirection: "clockwise",
 };
 
@@ -69,6 +72,8 @@ export function releaseKernel(n: number, p: PhysicsSettings, simulations: number
     let offset = travelPockets + p.releaseJitterPockets * gaussian(rnd);
     if (rnd() < p.deflectorHitProb) offset += p.deflectorKickMean + p.deflectorKickSd * gaussian(rnd);
     offset += Math.max(0, p.bounceMean + p.bounceSd * gaussian(rnd));
+    // Long roll: the ball keeps circling before it finally drops into a number.
+    if (p.longRollProb > 0 && rnd() < p.longRollProb) offset += -p.longRollMeanPockets * Math.log(Math.max(rnd(), 1e-12));
     const d = ((Math.round(sign * offset) % n) + n) % n;
     counts[d]! += 1;
     st += travelPockets;

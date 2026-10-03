@@ -1,6 +1,6 @@
 "use client";
 import type { WheelType } from "@/types/roulette";
-import type { HistoryPrediction, HistorySettings, PhysicsSettings, PredictionLogEntry } from "@/types/history";
+import type { EngineView, HistoryPrediction, HistorySettings, PhysicsSettings, PredictionLogEntry } from "@/types/history";
 import { DEFAULT_PHYSICS } from "@/engine/history/physicsRelease";
 import guide from "@/config/roulette-defaults.json";
 
@@ -11,6 +11,7 @@ const K = {
   settings: "spinsight:results:settings",
   last: "spinsight:results:lastPrediction",
   log: "spinsight:results:log",
+  engines: "spinsight:results:engineViews",
 } as const;
 
 function read<T>(key: string, fallback: T): T {
@@ -46,6 +47,7 @@ export const DEFAULT_SETTINGS: HistorySettings = {
   wheelType: guide.defaultWheel as WheelType,
   simulations: guide.simulations,
   physics: { ...DEFAULT_PHYSICS, ballDirection: guide.ballDirection as PhysicsSettings["ballDirection"] },
+  engineRuns: { kinematic: 400, rapier: 60, matter: 120 },
 };
 
 export const resultsStore = {
@@ -55,11 +57,18 @@ export const resultsStore = {
   saveWheel: (w: WheelType) => write(K.wheel, w),
   loadSettings: (): HistorySettings => {
     const s = read<Partial<HistorySettings>>(K.settings, {});
-    return { ...DEFAULT_SETTINGS, ...s, physics: { ...DEFAULT_PHYSICS, ...(s.physics ?? {}) } };
+    return {
+      ...DEFAULT_SETTINGS,
+      ...s,
+      physics: { ...DEFAULT_SETTINGS.physics, ...(s.physics ?? {}) },
+      engineRuns: { ...DEFAULT_SETTINGS.engineRuns, ...(s.engineRuns ?? {}) },
+    };
   },
   saveSettings: (s: HistorySettings) => write(K.settings, s),
   loadLast: () => read<HistoryPrediction | null>(K.last, null),
   saveLast: (p: HistoryPrediction | null) => write(K.last, p),
+  loadEngines: () => read<EngineView[]>(K.engines, []),
+  saveEngines: (v: EngineView[]) => write(K.engines, v),
   loadLog: () => read<PredictionLogEntry[]>(K.log, []),
   saveLog: (l: PredictionLogEntry[]) => write(K.log, l.slice(-500)),
   resetSettings: (): HistorySettings => {
@@ -68,7 +77,7 @@ export const resultsStore = {
     return DEFAULT_SETTINGS;
   },
   clearAll: () => {
-    for (const k of [K.text, K.last, K.log]) {
+    for (const k of [K.text, K.last, K.log, K.engines]) {
       try {
         localStorage.removeItem(k);
       } catch {
