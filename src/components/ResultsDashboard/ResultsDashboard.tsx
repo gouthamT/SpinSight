@@ -50,7 +50,7 @@ function TenNumbers({ top, baseline }: { top: RankedPocket[]; baseline: number }
   const mid = (ten[0]!.probability + ten[ten.length - 1]!.probability) / 2;
   const maxDev = Math.max(...ten.map((r) => Math.abs(r.probability - mid)), 1e-12);
   return (
-    <div className="grid grid-cols-10 gap-1 sm:gap-1.5">
+    <div className="grid grid-cols-10 gap-1">
       {ten.map((r) => {
         const c = heatColour(r.probability, mid, maxDev);
         return (
@@ -182,6 +182,14 @@ export function ResultsDashboard() {
     w.postMessage({ type: "run", values, settings: { ...settings, wheelType }, seed: KERNEL_SEED, runId } satisfies HistoryWorkerRequest);
   }, [parsed.values, settings, valid, wheelType]);
 
+  // Auto-guess: re-run (debounced) whenever valid results or settings change.
+  useEffect(() => {
+    if (!hydrated || !valid) return;
+    setRunning(true); // show the loading state immediately while typing
+    const id = setTimeout(guess, 600);
+    return () => clearTimeout(id);
+  }, [hydrated, valid, guess]);
+
   // ---- drag-to-reorder -------------------------------------------------------
   const move = (id: string, to: number) => {
     setOrder((o) => {
@@ -222,7 +230,7 @@ export function ResultsDashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 sm:space-y-6">
+    <div className="mx-auto max-w-4xl space-y-3 sm:space-y-4">
       <section className="panel space-y-3 p-3 sm:p-6">
         <div className="flex items-start gap-3">
           <div>
@@ -237,18 +245,25 @@ export function ResultsDashboard() {
         <HistoryInput text={text} parsed={parsed} onChange={setText} />
       </section>
 
-      <button
-        className="sticky bottom-3 z-10 w-full rounded-xl bg-accent px-6 py-4 text-xl font-bold sm:static sm:py-5 tracking-wide text-ink-950 shadow-lg shadow-accent/10 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-        onClick={guess}
-        disabled={!valid || running || !hydrated}
-      >
-        {running ? "Guessing…" : "Guess"}
-      </button>
       {error && <div className="rounded-lg border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{error}</div>}
 
-      {prediction && (
-        <section className="panel space-y-1 p-2 sm:p-4">
-          {!fresh && <p className="text-xs text-warn">Results changed since this guess. Press Guess to update.</p>}
+      {(prediction || running) && (
+        <section className="panel relative p-1.5 sm:p-3" aria-busy={running}>
+          <div className="flex items-center justify-between px-1.5 pb-1 text-[11px] text-ink-400">
+            <span>Next spin · 10 numbers per method</span>
+            <span className={`flex items-center gap-1.5 ${running ? "text-accent" : ""}`} role="status" aria-live="polite">
+              {running ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                  Updating…
+                </>
+              ) : fresh ? (
+                "Up to date"
+              ) : (
+                ""
+              )}
+            </span>
+          </div>
           {order.map((id, idx) => {
             const meta = ROW_META[id]!;
             const r = rowTop(id);
@@ -258,15 +273,15 @@ export function ResultsDashboard() {
                 ref={(el) => {
                   rowRefs.current[id] = el;
                 }}
-                className={`rounded-xl border p-2 transition-colors ${dragging === id ? "border-accent/70 bg-ink-850 shadow-lg" : "border-transparent"}`}
+                className={`rounded-lg border px-1.5 py-1 transition ${dragging === id ? "border-accent/70 bg-ink-850 shadow-lg" : "border-transparent"} ${running ? "opacity-50" : ""}`}
               >
-                <div className="mb-2 flex items-center gap-1">
+                <div className="mb-1 flex items-center gap-1">
                   {/* Drag handle: pointer events work for touch, pen and mouse. */}
                   <span
                     role="button"
                     tabIndex={0}
                     aria-label={`Drag ${meta.label} to reorder`}
-                    className="-ml-1 flex h-10 w-10 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-lg text-lg text-ink-400 active:cursor-grabbing active:bg-ink-800"
+                    className="-ml-1 flex h-8 w-8 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-lg text-lg text-ink-400 active:cursor-grabbing active:bg-ink-800"
                     onPointerDown={(e) => {
                       e.currentTarget.setPointerCapture(e.pointerId);
                       setDragging(id);
@@ -294,17 +309,25 @@ export function ResultsDashboard() {
                   >
                     ⠿
                   </span>
-                  <div className="min-w-0">
-                    <h3 className="font-semibold leading-tight">{meta.label}</h3>
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <h3 className="shrink-0 text-sm font-semibold">{meta.label}</h3>
                     <p className="truncate text-[11px] text-ink-400">{meta.note}</p>
                   </div>
                 </div>
-                {r.top ? <TenNumbers top={r.top} baseline={baseline} /> : <div className="px-1 text-xs text-ink-400">{r.status}</div>}
+                {r.top ? (
+                  <TenNumbers top={r.top} baseline={baseline} />
+                ) : r.status ? (
+                  <div className="px-1 text-xs text-ink-400">{r.status}</div>
+                ) : (
+                  <div className="grid grid-cols-10 gap-1">
+                    {Array.from({ length: 10 }, (_, i) => <div key={i} className="aspect-square animate-pulse rounded-md bg-ink-800" />)}
+                  </div>
+                )}
               </div>
             );
           })}
-          <p className="border-t border-ink-700 pt-3 text-[11px] leading-relaxed text-ink-400">
-            Ten numbers per row, darkest green first. Hold ⠿ and drag to reorder. {prediction.verdictText} On a fair wheel
+          <p className="mt-1 border-t border-ink-700 px-1.5 pt-2 text-[11px] leading-relaxed text-ink-400">
+            Updates automatically as you type. Darkest green first; hold ⠿ to reorder. {prediction?.verdictText} On a fair wheel
             every number has a {pct(baseline, 2)} chance; these are experimental model outputs, not verified predictions.
           </p>
         </section>
