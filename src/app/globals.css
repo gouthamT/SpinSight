@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #07090d;
+  --color-ink-900: #0c1017;
+  --color-ink-850: #10151e;
+  --color-ink-800: #151b26;
+  --color-ink-700: #1f2734;
+  --color-ink-600: #2c3646;
+  --color-ink-400: #6b778a;
+  --color-ink-300: #98a3b5;
+  --color-ink-100: #e3e8f0;
+  --color-accent: #34d6a0;
+  --color-accent-dim: #1d7a5c;
+  --color-warn: #f2b84b;
+  --color-bad: #f0616d;
+  --color-ball: #f5f5f5;
+  --color-rotor: #5aa9ff;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+html,
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+}
+
+.panel {
+  @apply rounded-xl border border-ink-700 bg-ink-900;
+}
+.panel-title {
+  @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40;
+}
+.btn-primary {
+  @apply btn bg-accent text-ink-950 hover:brightness-110;
+}
+.btn-ghost {
+  @apply btn border border-ink-600 text-ink-100 hover:bg-ink-800;
+}
+.input {
+  @apply w-full rounded-lg border border-ink-600 bg-ink-850 px-3 py-2 text-sm outline-none focus:border-accent;
+}
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
