@@ -139,9 +139,27 @@ export interface PredictionLogEntry {
   probOfActual: number | null;
 }
 
+/** Offset kernel of one engine: K[d] ∝ count of landings d pockets after the start pocket. */
+export interface EngineKernel {
+  engine: EngineView["engine"];
+  key: string;
+  runs: number;
+  settled: number;
+  offsetCounts: number[];
+  longRollShare: number;
+  meanDropS: number | null;
+  meanSettleS: number | null;
+  elapsedMs: number;
+  error: string | null;
+}
+
 export type HistoryWorkerRequest = { type: "run"; values: number[]; settings: HistorySettings; seed: number; runId: number };
 export type HistoryWorkerResponse =
   | { type: "result"; prediction: HistoryPrediction; runId: number }
-  | { type: "engine-progress"; engine: EngineView["engine"]; done: number; total: number; runId: number }
-  | { type: "engine"; view: EngineView; runId: number }
   | { type: "error"; message: string; runId: number };
+
+export type KernelWorkerRequest = { type: "kernel"; engine: EngineView["engine"]; settings: HistorySettings; seed: number; jobId: number };
+export type KernelWorkerResponse =
+  | { type: "progress"; engine: EngineView["engine"]; done: number; total: number; jobId: number }
+  | { type: "kernel"; kernel: EngineKernel; jobId: number }
+  | { type: "error"; engine: EngineView["engine"]; message: string; jobId: number };

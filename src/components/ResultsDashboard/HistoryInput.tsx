@@ -17,7 +17,7 @@ export function HistoryInput({
   onChange: (t: string) => void;
 }) {
   const backdrop = useRef<HTMLDivElement>(null);
-  const shared = "num w-full whitespace-pre-wrap break-words px-4 py-3 text-base leading-7";
+  const shared = "num w-full whitespace-pre-wrap break-words px-3 py-2.5 text-base leading-7 sm:px-4 sm:py-3";
 
   const pieces: React.ReactNode[] = [];
   let cursor = 0;
@@ -44,13 +44,13 @@ export function HistoryInput({
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
-          rows={5}
+          rows={4}
           placeholder="e.g. 17 4 22 0 31 9 14 28 6 35 12 19"
           onChange={(e) => onChange(e.target.value)}
           onScroll={(e) => {
             if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
           }}
-          className={`${shared} relative block min-h-36 resize-y bg-transparent text-ink-100 caret-accent outline-none`}
+          className={`${shared} relative block min-h-28 sm:min-h-36 resize-y bg-transparent text-ink-100 caret-accent outline-none`}
         />
       </div>
       {parsed.errors.length > 0 && (

@@ -129,3 +129,24 @@ describe("predictFromHistory", () => {
     expect(predictFromHistory([TRIPLE_ZERO, 5, 0], settings({ wheelType: "triple-zero" }), 1).probs).toHaveLength(39);
   });
 });
+
+describe("engine kernels (instant guesses)", async () => {
+  const { engineKernel, viewFromKernel, kernelKey } = await import("@/engine/history/engineRelease");
+  const s = settings({ engineRuns: { kinematic: 60, rapier: 10, matter: 10 } });
+  const k = await engineKernel("kinematic", s, 7);
+  it("records one offset per settled run", () => {
+    expect(k.offsetCounts.reduce((a, b) => a + b, 0)).toBe(k.settled);
+    expect(k.settled).toBeGreaterThan(50);
+  });
+  it("a view is the kernel rotated to the last result and sums to 1", () => {
+    const a = viewFromKernel(k, [0], "european");
+    const b = viewFromKernel(k, [32], "european"); // 32 is one pocket after 0 on the wheel
+    expect(a.probs.reduce((x, y) => x + y, 0)).toBeCloseTo(1, 9);
+    for (let j = 0; j < 37; j++) expect(b.probs[(j + 1) % 37]).toBeCloseTo(a.probs[j]!, 12);
+  });
+  it("is deterministic and keyed by settings", () => {
+    expect(kernelKey("kinematic", s, 7)).toBe(k.key);
+    expect(kernelKey("kinematic", { ...s, simulations: 1 }, 7)).toBe(k.key); // quick-physics samples don't affect engines
+    expect(kernelKey("kinematic", { ...s, physics: { ...s.physics, ballOmegaMean: 16 } }, 7)).not.toBe(k.key);
+  });
+});

@@ -6,7 +6,7 @@
  * drop speed are sampled from the settings, so each view is a landing
  * distribution from SIMULATION ONLY (not validated against the history).
  */
-import type { EngineView, HistorySettings } from "@/types/history";
+import type { EngineKernel, EngineView, HistorySettings } from "@/types/history";
 import type { SimParams } from "@/types/simulation";
 import { mulberry32 } from "@/engine/math/random";
 import { pocketCount, pocketOrder } from "@/engine/wheel/layout";
@@ -53,6 +53,107 @@ export function engineRunParams(settings: HistorySettings, lastIndex: number | n
   };
 }
 
+/**
+ * Rotation-invariant engine kernel: K[d] = P(next = previous + d pockets).
+ * Each run launches from a random start pocket s (seeded) and records the
+ * landing offset (final − s). Because only the offset is kept, one kernel
+ * serves every "last result", so it is computed ONCE per settings (and can be
+ * cached) and each guess is then instant: P(j | last L) = K[(j − L) mod N].
+ * The fixed deflector positions break the symmetry only slightly; random start
+ * pockets average that out.
+ */
+
+/** Cache key: everything that changes an engine's kernel. */
+export function kernelKey(engine: EngineView["engine"], settings: HistorySettings, seed: number): string {
+  return JSON.stringify({ v: 2, engine, w: settings.wheelType, p: settings.physics, n: settings.engineRuns[engine], seed });
+}
+
+export async function engineKernel(
+  engine: EngineView["engine"],
+  settings: HistorySettings,
+  seed: number,
+  onProgress?: (done: number, total: number) => void,
+  cancelled?: () => boolean,
+): Promise<EngineKernel> {
+  const t0 = performance.now();
+  const n = pocketCount(settings.wheelType);
+  const runs = Math.max(1, settings.engineRuns[engine]);
+  const offsetCounts = new Array<number>(n).fill(0);
+  const pick = mulberry32((seed ^ 0x27d4eb2d) >>> 0);
+  let settled = 0, longRolls = 0, sumDrop = 0, nDrop = 0, sumSettle = 0;
+  let error: string | null = null;
+  for (let i = 0; i < runs; i++) {
+    if (i % 5 === 4) {
+      await new Promise((res) => setTimeout(res, 0));
+      if (cancelled?.()) break;
+    }
+    const start = Math.floor(pick() * n);
+    const r = await runEngine(engine, engineRunParams(settings, start, seed, i));
+    if (r.error && !r.ok && r.samples.length === 0) {
+      error = r.error; // engine unavailable (e.g. package not installed)
+      break;
+    }
+    if (r.finalIndex !== null) {
+      offsetCounts[(((r.finalIndex - start) % n) + n) % n]! += 1;
+      settled++;
+      sumSettle += r.settleTimeS ?? 0;
+    }
+    if (r.dropTimeS !== null) {
+      sumDrop += r.dropTimeS;
+      nDrop++;
+    }
+    if (r.settleTimeS !== null && r.dropTimeS !== null && r.settleTimeS - r.dropTimeS >= LONG_ROLL_S) longRolls++;
+    onProgress?.(i + 1, runs);
+  }
+  return {
+    engine,
+    key: kernelKey(engine, settings, seed),
+    runs,
+    settled,
+    offsetCounts,
+    longRollShare: runs ? longRolls / runs : 0,
+    meanDropS: nDrop ? sumDrop / nDrop : null,
+    meanSettleS: settled ? sumSettle / settled : null,
+    elapsedMs: performance.now() - t0,
+    error,
+  };
+}
+
+/** Instant view for the next spin given the last result (pure arithmetic, no simulation). */
+export function viewFromKernel(k: EngineKernel, values: readonly number[], wheelType: HistorySettings["wheelType"]): EngineView {
+  const order = pocketOrder(wheelType);
+  const n = order.length;
+  const last = values.length ? values[values.length - 1]! : null;
+  const L = last === null ? null : order.indexOf(last);
+  const total = k.offsetCounts.reduce((a, b) => a + b, 0);
+  // Unknown last result: average over all start pockets → uniform.
+  const probs = Array.from({ length: n }, (_, j) =>
+    L === null || L < 0 || !total ? 1 / n : k.offsetCounts[(((j - L) % n) + n) % n]! / total,
+  );
+  const ranked = probs
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => b.p - a.p || a.i - b.i)
+    .map((x, r) => ({
+      rank: r + 1,
+      pocket: order[x.i]!,
+      probability: x.p,
+      stdError: total ? Math.sqrt((x.p * (1 - x.p)) / total) : 0,
+    }));
+  return {
+    engine: k.engine,
+    runs: k.runs,
+    settled: k.settled,
+    probs,
+    ranked,
+    meanDropS: k.meanDropS,
+    meanSettleS: k.meanSettleS,
+    longRollShare: k.longRollShare,
+    lastResult: last,
+    elapsedMs: k.elapsedMs,
+    error: k.error,
+  };
+}
+
 export async function engineView(
   engine: EngineView["engine"],
   values: readonly number[],
@@ -61,60 +162,5 @@ export async function engineView(
   onProgress?: (done: number, total: number) => void,
   cancelled?: () => boolean,
 ): Promise<EngineView> {
-  const t0 = performance.now();
-  const order = pocketOrder(settings.wheelType);
-  const n = order.length;
-  const last = values.length ? values[values.length - 1]! : null;
-  const lastIndex = last === null ? null : order.indexOf(last);
-  const runs = Math.max(1, settings.engineRuns[engine]);
-  const counts = new Array<number>(n).fill(0);
-  let settled = 0, longRolls = 0, sumDrop = 0, nDrop = 0, sumSettle = 0;
-  let error: string | null = null;
-  for (let i = 0; i < runs; i++) {
-    // Yield to the event loop so a newer request can cancel this one.
-    if (i % 5 === 4) {
-      await new Promise((res) => setTimeout(res, 0));
-      if (cancelled?.()) break;
-    }
-    const r = await runEngine(engine, engineRunParams(settings, lastIndex, seed, i));
-    if (r.error && !r.ok && r.samples.length === 0) {
-      error = r.error; // engine unavailable (e.g. package not installed)
-      break;
-    }
-    if (r.finalIndex !== null) {
-      counts[r.finalIndex]! += 1;
-      settled++;
-      sumSettle += r.settleTimeS ?? 0;
-    }
-    if (r.dropTimeS !== null) {
-      sumDrop += r.dropTimeS;
-      nDrop++;
-    }
-    // Long roll: the ball keeps rolling ≥ 2.5 s between leaving the track and landing.
-    if (r.settleTimeS !== null && r.dropTimeS !== null && r.settleTimeS - r.dropTimeS >= LONG_ROLL_S) longRolls++;
-    onProgress?.(i + 1, runs);
-  }
-  const probs = counts.map((c) => (settled ? c / settled : 1 / n));
-  const ranked = probs
-    .map((p, i) => ({ p, i }))
-    .sort((a, b) => b.p - a.p || a.i - b.i)
-    .map((x, r) => ({
-      rank: r + 1,
-      pocket: order[x.i]!,
-      probability: x.p,
-      stdError: settled ? Math.sqrt((x.p * (1 - x.p)) / settled) : 0,
-    }));
-  return {
-    engine,
-    runs,
-    settled,
-    probs,
-    ranked,
-    meanDropS: nDrop ? sumDrop / nDrop : null,
-    meanSettleS: settled ? sumSettle / settled : null,
-    longRollShare: runs ? longRolls / runs : 0,
-    lastResult: last,
-    elapsedMs: performance.now() - t0,
-    error,
-  };
+  return viewFromKernel(await engineKernel(engine, settings, seed, onProgress, cancelled), values, settings.wheelType);
 }

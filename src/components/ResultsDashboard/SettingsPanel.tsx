@@ -84,14 +84,24 @@ export function SettingsPanel() {
               {(Object.keys(WHEEL_LABEL) as WheelType[]).map((w) => <option key={w} value={w}>{WHEEL_LABEL[w]}</option>)}
             </select>
           </label>
-          <label className="space-y-1">
-            <span className="text-xs text-ink-300">Ball direction</span>
-            <select className="input" value={s.physics.ballDirection} onChange={(e) => setPhysics({ ballDirection: e.target.value as PhysicsSettings["ballDirection"] })}>
-              <option value="clockwise">Clockwise</option>
-              <option value="counter-clockwise">Counter-clockwise</option>
-            </select>
-            <span className="block text-[11px] text-ink-400">Wheel spins the opposite way: {wheelDirection.toLowerCase()}.</span>
-          </label>
+          <div className="space-y-1">
+            <span className="text-xs text-ink-300">Ball / wheel direction</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={s.physics.ballDirection === "clockwise"}
+              onClick={() => setPhysics({ ballDirection: s.physics.ballDirection === "clockwise" ? "counter-clockwise" : "clockwise" })}
+              className="flex w-full items-center gap-3 rounded-lg border border-ink-600 bg-ink-850 px-3 py-2 text-left text-sm"
+            >
+              <span className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition ${s.physics.ballDirection === "clockwise" ? "bg-accent" : "bg-ink-600"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${s.physics.ballDirection === "clockwise" ? "left-[22px]" : "left-0.5"}`} />
+              </span>
+              <span>
+                Ball <b>{s.physics.ballDirection === "clockwise" ? "↻ clockwise" : "↺ counter-clockwise"}</b>
+              </span>
+            </button>
+            <span className="block text-[11px] text-ink-400">Wheel spins the opposite way ({wheelDirection.toLowerCase()}), as in the guide.</span>
+          </div>
           {(["kinematic", "rapier", "matter"] as const).map((e) => (
             <label key={e} className="space-y-1">
               <span className="text-xs text-ink-300">

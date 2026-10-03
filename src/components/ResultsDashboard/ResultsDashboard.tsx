@@ -2,22 +2,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { WheelType } from "@/types/roulette";
-import type { EngineView, HistoryPrediction, HistoryWorkerRequest, HistoryWorkerResponse, RankedPocket } from "@/types/history";
+import type {
+  EngineKernel,
+  EngineView,
+  HistoryPrediction,
+  HistoryWorkerRequest,
+  HistoryWorkerResponse,
+  KernelWorkerRequest,
+  KernelWorkerResponse,
+  RankedPocket,
+} from "@/types/history";
 import { parseHistory } from "@/engine/history/parseHistory";
+import { kernelKey, viewFromKernel } from "@/engine/history/engineRelease";
+import { KERNEL_SEED } from "@/engine/history/historyPredictor";
 import { pocketLabel, pocketOrder, WHEEL_LABEL } from "@/engine/wheel/layout";
 import { DEFAULT_SETTINGS, resultsStore } from "@/lib/storage/resultsStore";
 import { HistoryInput } from "./HistoryInput";
 import { heatColour } from "./PredictionResults";
 
 const pct = (p: number, d = 1) => `${(p * 100).toFixed(d)}%`;
+const ENGINES = ["kinematic", "rapier", "matter"] as const;
+type EngineId = (typeof ENGINES)[number];
 
-interface Row {
-  id: string;
-  label: string;
-  note: string;
-  top: RankedPocket[] | null;
-  status?: string;
-}
+// Default order: physics first, then the three engines, then the statistical views.
+const ROW_META: Record<string, { label: string; note: string }> = {
+  physics: { label: "Physics", note: "Released from the last result: speeds, drop, deflectors, bounces, long rolls" },
+  kinematic: { label: "Kinematic", note: "Full spins from the last result until the ball lands" },
+  rapier: { label: "Rapier", note: "Full spins from the last result until the ball lands" },
+  matter: { label: "Matter", note: "Full spins from the last result until the ball lands" },
+  combined: { label: "Combined", note: "All models, weighted by how well each predicted your own history" },
+  frequency: { label: "Hot numbers", note: "Pocket frequency in your history (wheel bias)" },
+  offset: { label: "Sequence pattern", note: "Wheel distance between consecutive results" },
+};
+const DEFAULT_ORDER = Object.keys(ROW_META);
 
 function rank(probs: number[], wheelType: WheelType): RankedPocket[] {
   const order = pocketOrder(wheelType);
@@ -57,28 +74,76 @@ export function ResultsDashboard() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [text, setText] = useState("");
   const [prediction, setPrediction] = useState<HistoryPrediction | null>(null);
-  const [engineViews, setEngineViews] = useState<EngineView[]>([]);
-  const [progress, setProgress] = useState<Partial<Record<EngineView["engine"], string>>>({});
+  const [guessedValues, setGuessedValues] = useState<number[] | null>(null);
+  const [kernels, setKernels] = useState<Partial<Record<EngineId, EngineKernel>>>({});
+  const [progress, setProgress] = useState<Partial<Record<EngineId, string>>>({});
+  const [order, setOrder] = useState<string[]>(DEFAULT_ORDER);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const worker = useRef<Worker | null>(null);
+  const statsWorker = useRef<Worker | null>(null);
+  const kernelWorkers = useRef<Partial<Record<EngineId, Worker>>>({});
+  const jobIds = useRef<Record<EngineId, number>>({ kinematic: 0, rapier: 0, matter: 0 });
   const runIdRef = useRef(0);
 
+  // ---- load persisted state ------------------------------------------------
   useEffect(() => {
     const w = resultsStore.loadWheel();
     setWheelType(w);
     setSettings({ ...resultsStore.loadSettings(), wheelType: w });
-    setText(resultsStore.loadText());
-    setPrediction(resultsStore.loadLast());
-    setEngineViews(resultsStore.loadEngines());
+    const t = resultsStore.loadText();
+    setText(t);
+    const last = resultsStore.loadLast();
+    setPrediction(last);
+    if (last) setGuessedValues(parseHistory(t, w).values.slice(0, last.historyLength));
+    const saved = resultsStore.loadRowOrder();
+    if (saved.length) setOrder([...saved.filter((id) => id in ROW_META), ...DEFAULT_ORDER.filter((id) => !saved.includes(id))]);
     setHydrated(true);
   }, []);
 
+  // ---- workers -----------------------------------------------------------------
   useEffect(() => {
-    const w = new Worker(new URL("../../workers/historySim.worker.ts", import.meta.url), { type: "module" });
-    worker.current = w;
-    return () => w.terminate();
+    statsWorker.current = new Worker(new URL("../../workers/historySim.worker.ts", import.meta.url), { type: "module" });
+    for (const id of ENGINES) {
+      kernelWorkers.current[id] = new Worker(new URL("../../workers/engineKernel.worker.ts", import.meta.url), { type: "module" });
+    }
+    return () => {
+      statsWorker.current?.terminate();
+      for (const id of ENGINES) kernelWorkers.current[id]?.terminate();
+    };
   }, []);
+
+  // ---- background engine kernels: computed once per settings, cached ------------
+  useEffect(() => {
+    if (!hydrated) return;
+    const s = { ...settings, wheelType };
+    const cache = resultsStore.loadKernels();
+    const next: Partial<Record<EngineId, EngineKernel>> = {};
+    for (const id of ENGINES) {
+      const key = kernelKey(id, s, KERNEL_SEED);
+      const hit = cache[key];
+      if (hit && !hit.error) {
+        next[id] = hit;
+        continue;
+      }
+      const w = kernelWorkers.current[id];
+      if (!w) continue;
+      const jobId = ++jobIds.current[id];
+      w.onmessage = (e: MessageEvent<KernelWorkerResponse>) => {
+        const m = e.data;
+        if (m.jobId !== jobIds.current[id]) return;
+        if (m.type === "progress") setProgress((p) => ({ ...p, [id]: `${m.done}/${m.total}` }));
+        else if (m.type === "kernel") {
+          if (!m.kernel.error) resultsStore.saveKernel(m.kernel);
+          setKernels((k) => ({ ...k, [id]: m.kernel }));
+        } else setKernels((k) => ({ ...k, [id]: { ...emptyKernel(id, key), error: m.message } }));
+      };
+      setProgress((p) => ({ ...p, [id]: "starting" }));
+      w.postMessage({ type: "kernel", engine: id, settings: s, seed: KERNEL_SEED, jobId } satisfies KernelWorkerRequest);
+    }
+    setKernels(next);
+  }, [hydrated, settings, wheelType]);
 
   const parsed = useMemo(() => parseHistory(text, wheelType), [text, wheelType]);
   const valid = parsed.errors.length === 0;
@@ -95,77 +160,70 @@ export function ResultsDashboard() {
     resultsStore.clearAll();
     setText("");
     setPrediction(null);
-    setEngineViews([]);
+    setGuessedValues(null);
   };
 
   const guess = useCallback(() => {
-    const w = worker.current;
+    const w = statsWorker.current;
     if (!w || !valid) return;
     setRunning(true);
     setError(null);
-    setEngineViews([]);
-    setProgress({});
     const runId = ++runIdRef.current;
+    const values = parsed.values;
     w.onmessage = (e: MessageEvent<HistoryWorkerResponse>) => {
       const m = e.data;
       if (m.runId !== runIdRef.current) return;
-      if (m.type === "error") {
-        setRunning(false);
-        setError(m.message);
-      } else if (m.type === "engine-progress") {
-        setProgress((p) => ({ ...p, [m.engine]: `${m.done}/${m.total}` }));
-      } else if (m.type === "engine") {
-        setEngineViews((vs) => {
-          const next = [...vs.filter((v) => v.engine !== m.view.engine), m.view];
-          resultsStore.saveEngines(next);
-          if (next.length === 3) setRunning(false);
-          return next;
-        });
-      } else {
-        setPrediction(m.prediction);
-        resultsStore.saveLast(m.prediction);
-      }
+      setRunning(false);
+      if (m.type === "error") return setError(m.message);
+      setPrediction(m.prediction);
+      setGuessedValues(values);
+      resultsStore.saveLast(m.prediction);
     };
-    const req: HistoryWorkerRequest = {
-      type: "run",
-      values: parsed.values,
-      settings: { ...settings, wheelType },
-      seed: Math.floor(Math.random() * 2 ** 31),
-      runId,
-    };
-    w.postMessage(req);
+    w.postMessage({ type: "run", values, settings: { ...settings, wheelType }, seed: KERNEL_SEED, runId } satisfies HistoryWorkerRequest);
   }, [parsed.values, settings, valid, wheelType]);
+
+  // ---- drag-to-reorder -------------------------------------------------------
+  const move = (id: string, to: number) => {
+    setOrder((o) => {
+      const next = o.filter((x) => x !== id);
+      next.splice(Math.max(0, Math.min(to, next.length)), 0, id);
+      resultsStore.saveRowOrder(next);
+      return next;
+    });
+  };
 
   const baseline = 1 / pocketOrder(wheelType).length;
   const fresh = prediction && prediction.historyLength === parsed.values.length && prediction.wheelType === wheelType;
   const model = (id: string) => prediction?.models.find((m) => m.id === id);
-  const engine = (id: EngineView["engine"]) => engineViews.find((v) => v.engine === id) ?? null;
-  const engineStatus = (id: EngineView["engine"]) => {
-    const v = engine(id);
-    if (v?.error) return v.error;
-    if (!v) return running ? (progress[id] ? `Simulating ${progress[id]} spins…` : "Waiting…") : "Press Guess";
-    return undefined;
+  const engineView = (id: EngineId): EngineView | null => {
+    const k = kernels[id];
+    return k && guessedValues ? viewFromKernel(k, guessedValues, wheelType) : null;
   };
 
-  const rows: Row[] = prediction
-    ? [
-        { id: "combined", label: "Combined", note: "All models, weighted by how well each predicted your own history", top: prediction.ranked },
-        { id: "frequency", label: "Hot numbers", note: "Pocket frequency in your history (wheel bias)", top: model("frequency") ? rank(model("frequency")!.probs, wheelType) : null },
-        { id: "offset", label: "Sequence pattern", note: "Wheel distance between consecutive results", top: model("sequence-offset") ? rank(model("sequence-offset")!.probs, wheelType) : null },
-        { id: "physics", label: "Physics (quick)", note: "Released from the last result: speeds, drop, deflectors, bounces, long rolls", top: model("physics-release") ? rank(model("physics-release")!.probs, wheelType) : null },
-        ...(["kinematic", "rapier", "matter"] as const).map((id) => ({
-          id,
-          label: id === "kinematic" ? "Kinematic engine" : id === "rapier" ? "Rapier.js engine" : "Matter.js engine",
-          note: "Full spins from the last result until the ball lands",
-          top: engine(id) && !engine(id)!.error ? engine(id)!.ranked : null,
-          status: engineStatus(id),
-        })),
-      ]
-    : [];
+  const rowTop = (id: string): { top: RankedPocket[] | null; status?: string } => {
+    if (!prediction) return { top: null };
+    switch (id) {
+      case "combined":
+        return { top: prediction.ranked };
+      case "frequency":
+        return { top: model("frequency") ? rank(model("frequency")!.probs, wheelType) : null };
+      case "offset":
+        return { top: model("sequence-offset") ? rank(model("sequence-offset")!.probs, wheelType) : null };
+      case "physics":
+        return { top: model("physics-release") ? rank(model("physics-release")!.probs, wheelType) : null };
+      default: {
+        const e = id as EngineId;
+        const v = engineView(e);
+        if (v?.error) return { top: null, status: v.error };
+        if (!v) return { top: null, status: `Preparing simulations ${progress[e] ?? ""}… (one-off for these settings)` };
+        return { top: v.ranked };
+      }
+    }
+  };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <section className="panel space-y-3 p-4 sm:p-6">
+    <div className="mx-auto max-w-4xl space-y-4 sm:space-y-6">
+      <section className="panel space-y-3 p-3 sm:p-6">
         <div className="flex items-start gap-3">
           <div>
             <label htmlFor="history" className="text-lg font-semibold">Previous Roulette Results (Oldest → Newest)</label>
@@ -180,7 +238,7 @@ export function ResultsDashboard() {
       </section>
 
       <button
-        className="w-full rounded-xl bg-accent px-6 py-5 text-xl font-bold tracking-wide text-ink-950 shadow-lg shadow-accent/10 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+        className="sticky bottom-3 z-10 w-full rounded-xl bg-accent px-6 py-4 text-xl font-bold sm:static sm:py-5 tracking-wide text-ink-950 shadow-lg shadow-accent/10 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         onClick={guess}
         disabled={!valid || running || !hydrated}
       >
@@ -189,23 +247,72 @@ export function ResultsDashboard() {
       {error && <div className="rounded-lg border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{error}</div>}
 
       {prediction && (
-        <section className="panel space-y-5 p-4 sm:p-6">
+        <section className="panel space-y-1 p-2 sm:p-4">
           {!fresh && <p className="text-xs text-warn">Results changed since this guess. Press Guess to update.</p>}
-          {rows.map((r) => (
-            <div key={r.id} className="space-y-2">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <h3 className="font-semibold">{r.label}</h3>
-                <span className="text-[11px] text-ink-400">{r.note}</span>
+          {order.map((id, idx) => {
+            const meta = ROW_META[id]!;
+            const r = rowTop(id);
+            return (
+              <div
+                key={id}
+                ref={(el) => {
+                  rowRefs.current[id] = el;
+                }}
+                className={`rounded-xl border p-2 transition-colors ${dragging === id ? "border-accent/70 bg-ink-850 shadow-lg" : "border-transparent"}`}
+              >
+                <div className="mb-2 flex items-center gap-1">
+                  {/* Drag handle: pointer events work for touch, pen and mouse. */}
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Drag ${meta.label} to reorder`}
+                    className="-ml-1 flex h-10 w-10 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-lg text-lg text-ink-400 active:cursor-grabbing active:bg-ink-800"
+                    onPointerDown={(e) => {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      setDragging(id);
+                    }}
+                    onPointerMove={(e) => {
+                      if (dragging !== id) return;
+                      const y = e.clientY;
+                      let target = 0;
+                      order.forEach((other) => {
+                        if (other === id) return;
+                        const el = rowRefs.current[other];
+                        if (el) {
+                          const b = el.getBoundingClientRect();
+                          if (y > b.top + b.height / 2) target++;
+                        }
+                      });
+                      if (target !== idx) move(id, target);
+                    }}
+                    onPointerUp={() => setDragging(null)}
+                    onPointerCancel={() => setDragging(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowUp") move(id, idx - 1);
+                      if (e.key === "ArrowDown") move(id, idx + 1);
+                    }}
+                  >
+                    ⠿
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold leading-tight">{meta.label}</h3>
+                    <p className="truncate text-[11px] text-ink-400">{meta.note}</p>
+                  </div>
+                </div>
+                {r.top ? <TenNumbers top={r.top} baseline={baseline} /> : <div className="px-1 text-xs text-ink-400">{r.status}</div>}
               </div>
-              {r.top ? <TenNumbers top={r.top} baseline={baseline} /> : <div className="text-xs text-ink-400">{r.status}</div>}
-            </div>
-          ))}
+            );
+          })}
           <p className="border-t border-ink-700 pt-3 text-[11px] leading-relaxed text-ink-400">
-            Ten numbers per row, darkest green first. {prediction.verdictText} On a fair wheel every number has a{" "}
-            {pct(baseline, 2)} chance; these are experimental model outputs, not verified predictions.
+            Ten numbers per row, darkest green first. Hold ⠿ and drag to reorder. {prediction.verdictText} On a fair wheel
+            every number has a {pct(baseline, 2)} chance; these are experimental model outputs, not verified predictions.
           </p>
         </section>
       )}
     </div>
   );
+}
+
+function emptyKernel(engine: EngineId, key: string): EngineKernel {
+  return { engine, key, runs: 0, settled: 0, offsetCounts: [], longRollShare: 0, meanDropS: null, meanSettleS: null, elapsedMs: 0, error: null };
 }

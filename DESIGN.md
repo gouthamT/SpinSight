@@ -210,7 +210,14 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
   - the results text area, which auto-saves with a 400 ms debounce
   - a **Clear** button at the right end of the header
   - one **Guess** button
-  - then **one row of 10 numbers per algorithm or pattern**, shaded dark green (strongest) → dark red (weakest) within that row. The rows are Combined, Hot numbers (frequency), Sequence pattern (offset), Physics (quick), Kinematic engine, Rapier.js engine and Matter.js engine.
+  - then **one row of 10 numbers per algorithm or pattern**, shaded dark green (strongest) → dark red (weakest) within that row. Default row order: Physics, Kinematic, Rapier, Matter, Combined, Hot numbers, Sequence pattern.
+  - **Reordering:** hold the ⠿ handle and drag a row to move it. This uses pointer events, so it works with touch on phones; arrow keys also work. The order is saved in localStorage.
+  - **Mobile first:** 375 px layout with a 5×2 number grid, 40 px touch handles, and a Guess button that sticks to the bottom of the screen on phones. The normal keyboard is kept because results need spaces.
+- **Instant guesses** (an earlier version took 10–30 s per guess):
+  - Each engine's **offset kernel** K[d] = P(next = previous + d) is computed **once per settings**: launches come from random start pockets and only the landing offset is kept. The kernels are computed in **three parallel workers** (`engineKernel.worker.ts`) in the background as soon as the page or Settings change, and cached in localStorage under a settings key.
+  - A guess then just rotates each cached kernel to the last result (`viewFromKernel`).
+  - The quick physics kernel is memoised per settings with a fixed seed (`KERNEL_SEED`), so guesses are deterministic.
+  - Measured on your Mac: about 100 ms from pressing Guess to all seven rows.
   - a single honesty line with the verdict and the 1/N baseline
   - **No** wheel dropdown on the dashboard: the wheel comes from Settings, defaulting to the guide's single-zero wheel. **No** run-again, copy, top-10 detail or update-results sections.
 - **Inputs:** results typed oldest → newest, validated per wheel (European 0–36, American plus 00, triple zero plus 00 and 000; 00 = −1, 000 = −2). Invalid tokens are highlighted in place with a mirrored backdrop and explained.
@@ -235,7 +242,8 @@ SpinSight is a browser app that **measures** a roulette wheel from a camera or v
   - In the quick physics model: with probability `longRollProb` (default 0.15), extra travel ~ Exponential(`longRollMeanPockets` = 30) is added.
   - In the engines it happens physically; a run counts as a long roll when ≥ 2.5 s pass between leaving the track and landing in a number.
   - Both settings are editable in Settings.
-- **Deliberately not built:** live entry of the ball's start position or spin direction during a spin for in-casino use (see the use boundary in §1).
+- **Ball/wheel direction** is a switch in Settings (ball ↻ or ↺, wheel the opposite way). It's static wheel configuration, not a per-spin input.
+- **Deliberately not built:** live entry of the ball's start position or spin direction during a spin for in-casino use (see the use boundary in §1). The `feat/spin-detection-settings` branch on GitHub (commit 0cd1e06, user-authored) adds such inputs. It was not merged or extended. For your own wheel, the camera tracker already measures the start position and both directions automatically.
 
 ### 5.10 Simulation adapters & lab (Phase 5)
 - **Shared scene** (`engine/physics/rouletteScene.ts`), 2-D top-down in SI units:

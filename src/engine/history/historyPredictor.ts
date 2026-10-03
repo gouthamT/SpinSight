@@ -20,7 +20,23 @@ import type { WheelType } from "@/types/roulette";
 import type { HistoryModelId, HistoryModelReport, HistoryPrediction, HistorySettings, RankedPocket } from "@/types/history";
 import { pocketCount, pocketOrder } from "@/engine/wheel/layout";
 import { chiSquareUniform } from "./stats";
-import { releaseKernel } from "./physicsRelease";
+import { releaseKernel, type ReleaseKernel } from "./physicsRelease";
+
+/** Fixed seed for physics kernels: same settings → same kernel → cacheable. */
+export const KERNEL_SEED = 20261004;
+const kernelCache = new Map<string, ReleaseKernel>();
+
+/** Quick-physics kernel, memoised per (wheel size, physics settings, sample count). */
+export function cachedReleaseKernel(n: number, settings: HistorySettings): ReleaseKernel {
+  const key = JSON.stringify([n, settings.physics, settings.simulations]);
+  let k = kernelCache.get(key);
+  if (!k) {
+    k = releaseKernel(n, settings.physics, settings.simulations, KERNEL_SEED);
+    if (kernelCache.size > 8) kernelCache.clear();
+    kernelCache.set(key, k);
+  }
+  return k;
+}
 
 export const MIN_HISTORY_FOR_EVIDENCE = 20;
 
@@ -62,7 +78,7 @@ export function predictFromHistory(values: readonly number[], settings: HistoryS
   const idx = values.map((v) => idxOf.get(v)).filter((i): i is number => i !== undefined);
   const n = idx.length;
 
-  const phys = releaseKernel(N, settings.physics, settings.simulations, seed);
+  const phys = cachedReleaseKernel(N, settings);
   const kPhys = phys.kernel.map((v) => Math.max(v, 0.5 / Math.max(phys.simulations, 1))); // avoid log(0)
   const zPhys = kPhys.reduce((a, b) => a + b, 0);
   const kernel = kPhys.map((v) => v / zPhys);

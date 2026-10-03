@@ -1,6 +1,6 @@
 "use client";
 import type { WheelType } from "@/types/roulette";
-import type { EngineView, HistoryPrediction, HistorySettings, PhysicsSettings, PredictionLogEntry } from "@/types/history";
+import type { EngineKernel, EngineView, HistoryPrediction, HistorySettings, PhysicsSettings, PredictionLogEntry } from "@/types/history";
 import { DEFAULT_PHYSICS } from "@/engine/history/physicsRelease";
 import guide from "@/config/roulette-defaults.json";
 
@@ -12,6 +12,8 @@ const K = {
   last: "spinsight:results:lastPrediction",
   log: "spinsight:results:log",
   engines: "spinsight:results:engineViews",
+  kernels: "spinsight:results:engineKernels",
+  order: "spinsight:results:rowOrder",
 } as const;
 
 function read<T>(key: string, fallback: T): T {
@@ -69,6 +71,17 @@ export const resultsStore = {
   saveLast: (p: HistoryPrediction | null) => write(K.last, p),
   loadEngines: () => read<EngineView[]>(K.engines, []),
   saveEngines: (v: EngineView[]) => write(K.engines, v),
+  /** Engine kernels keyed by kernelKey(); small (N numbers each). */
+  loadKernels: () => read<Record<string, EngineKernel>>(K.kernels, {}),
+  saveKernel: (k: EngineKernel) => {
+    const all = read<Record<string, EngineKernel>>(K.kernels, {});
+    all[k.key] = k;
+    const keys = Object.keys(all);
+    for (const old of keys.slice(0, Math.max(0, keys.length - 12))) delete all[old]; // keep the latest 12
+    write(K.kernels, all);
+  },
+  loadRowOrder: () => read<string[]>(K.order, []),
+  saveRowOrder: (o: string[]) => write(K.order, o),
   loadLog: () => read<PredictionLogEntry[]>(K.log, []),
   saveLog: (l: PredictionLogEntry[]) => write(K.log, l.slice(-500)),
   resetSettings: (): HistorySettings => {
