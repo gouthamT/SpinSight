@@ -59,7 +59,14 @@ const DEFAULT_ORDER = Object.keys(ROW_META);
 const STATS_ROWS = ["combined", "frequency", "offset"];
 /** Rows whose first five feed the "Top picks" row. */
 const PICK_ROWS = ["physics", "kinematic", "rapier", "matter"] as const;
-const PICK_COLOURS = ["", "hsl(210 15% 80%)", "hsl(55 95% 60%)", "hsl(95 85% 58%)", "hsl(135 90% 58%)"];
+/** Agreement 1…4 → grey, yellow, light green, green (text, border, background). */
+const PICK_STYLES: React.CSSProperties[] = [
+  {},
+  { color: "hsl(210 20% 85%)", borderColor: "hsl(210 12% 45%)", background: "hsl(210 15% 16%)" },
+  { color: "hsl(55 95% 66%)", borderColor: "hsl(55 85% 48%)", background: "hsl(55 70% 13%)" },
+  { color: "hsl(95 90% 66%)", borderColor: "hsl(95 75% 45%)", background: "hsl(95 65% 13%)" },
+  { color: "hsl(135 95% 66%)", borderColor: "hsl(135 75% 45%)", background: "hsl(135 65% 13%)" },
+];
 
 /** Unique numbers from the first five of each physics view, most-agreed first. */
 function TopPicks({ lists }: { lists: { id: string; top: RankedPocket[] }[] }) {
@@ -78,12 +85,12 @@ function TopPicks({ lists }: { lists: { id: string; top: RankedPocket[] }[] }) {
   return (
     <div className="grid grid-cols-10 gap-0.5">
       {picks.map(([pocket, e]) => {
-        const c = PICK_COLOURS[Math.min(4, e.count)]!;
+        const st = PICK_STYLES[Math.min(4, e.count)]!;
         return (
           <div
             key={pocket}
             className="relative flex min-w-0 items-center justify-center rounded-md border py-0.5"
-            style={{ color: c, borderColor: c }}
+            style={st}
             title={`${pocketLabel(pocket)} · in the first five of ${e.from.join(", ")}`}
           >
             <span className="num text-base font-extrabold tracking-tight sm:text-xl">{pocketLabel(pocket)}</span>
@@ -115,10 +122,17 @@ function rank(probs: number[], wheelType: WheelType): RankedPocket[] {
  * strongest of the ten through yellow to bright red for the weakest. Colours
  * are chosen for contrast on the dark panel.
  */
-function heatText(p: number, mid: number, maxDev: number): string {
+function heatHue(p: number, mid: number, maxDev: number): number {
   const t = Math.max(-1, Math.min(1, (p - mid) / maxDev));
-  const hue = Math.round(65 + 65 * t); // 130 green … 65 yellow … 0 red
-  return `hsl(${hue} 90% 62%)`;
+  return Math.round(65 + 65 * t); // 130 green … 65 yellow … 0 red
+}
+/** Bright text and border on a deep tint of the same hue: readable on the dark panel. */
+function heatStyle(hue: number): React.CSSProperties {
+  return {
+    color: `hsl(${hue} 95% 68%)`,
+    borderColor: `hsl(${hue} 80% 50%)`,
+    background: `hsl(${hue} 70% 14%)`,
+  };
 }
 
 function TenNumbers({
@@ -140,7 +154,7 @@ function TenNumbers({
         <div
           key={r.pocket}
           className="flex min-w-0 items-center justify-center rounded-md border py-0.5"
-          style={{ color: heatText(r.probability, mid, maxDev), borderColor: heatText(r.probability, mid, maxDev) }}
+          style={heatStyle(heatHue(r.probability, mid, maxDev))}
           title={`#${r.rank} · ${pocketLabel(r.pocket)} · ${pct(r.probability, 2)} (uniform ${pct(baseline, 2)})`}
         >
           <span className="num text-base font-extrabold tracking-tight sm:text-xl">
