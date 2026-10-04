@@ -148,7 +148,16 @@ export function ResultsDashboard() {
     const w = resultsStore.loadWheel();
     const loaded = resultsStore.loadSettings();
     setWheelType(w);
-    setSettings({ ...loaded, wheelType: w });
+    setSettings({
+      ...loaded,
+      wheelType: w,
+      startingPointIndex: loaded.startingPointIndex ?? null,
+      wheelDirection: loaded.wheelDirection,
+      physics: {
+        ...loaded.physics,
+        ballDirection: loaded.physics.ballDirection,
+      },
+    });
     setBallDirection(loaded.physics.ballDirection);
     setWheelDirection(loaded.wheelDirection);
     setStartingPointIndex(loaded.startingPointIndex ?? null);
@@ -248,54 +257,40 @@ export function ResultsDashboard() {
     setGuessedValues(null);
   };
 
-  const toggleBallDirection = useCallback(() => {
-    const nextDirection =
-      ballDirection === "clockwise" ? "counter-clockwise" : "clockwise";
-    setBallDirection(nextDirection);
+  useEffect(() => {
     setSettings((previous) => {
       const nextSettings: HistorySettings = {
         ...previous,
         wheelType,
+        startingPointIndex,
+        wheelDirection,
         physics: {
           ...previous.physics,
-          ballDirection: nextDirection,
+          ballDirection,
         },
       };
+      if (JSON.stringify(previous) === JSON.stringify(nextSettings))
+        return previous;
       resultsStore.saveSettings(nextSettings);
       return nextSettings;
     });
-  }, [ballDirection, wheelType]);
+  }, [ballDirection, startingPointIndex, wheelDirection, wheelType]);
+
+  const toggleBallDirection = useCallback(() => {
+    const nextDirection =
+      ballDirection === "clockwise" ? "counter-clockwise" : "clockwise";
+    setBallDirection(nextDirection);
+  }, [ballDirection]);
 
   const toggleWheelDirection = useCallback(() => {
     const nextDirection: HistorySettings["wheelDirection"] =
       wheelDirection === 1 ? -1 : 1;
     setWheelDirection(nextDirection);
-    setSettings((previous) => {
-      const nextSettings: HistorySettings = {
-        ...previous,
-        wheelType,
-        wheelDirection: nextDirection,
-      };
-      resultsStore.saveSettings(nextSettings);
-      return nextSettings;
-    });
-  }, [wheelDirection, wheelType]);
+  }, [wheelDirection]);
 
-  const setStartPocket = useCallback(
-    (nextIndex: number | null) => {
-      setStartingPointIndex(nextIndex);
-      setSettings((previous) => {
-        const nextSettings: HistorySettings = {
-          ...previous,
-          wheelType,
-          startingPointIndex: nextIndex,
-        };
-        resultsStore.saveSettings(nextSettings);
-        return nextSettings;
-      });
-    },
-    [wheelType],
-  );
+  const setStartPocket = useCallback((nextIndex: number | null) => {
+    setStartingPointIndex(nextIndex);
+  }, []);
 
   const guess = useCallback(() => {
     const w = statsWorker.current;
@@ -430,8 +425,8 @@ export function ResultsDashboard() {
                   type="button"
                   className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-left transition ${
                     ballClockwise
-                      ? "border-accent/60 bg-accent/10 text-accent"
-                      : "border-ink-700 bg-ink-900 text-ink-300 hover:border-accent/60 hover:text-accent"
+                      ? "border-sky-500/60 bg-sky-500/10 text-sky-200"
+                      : "border-sky-700 bg-sky-950/20 text-sky-300 hover:border-sky-500/60 hover:text-sky-200"
                   }`}
                   onClick={toggleBallDirection}
                   title="Toggle ball direction"
@@ -439,14 +434,19 @@ export function ResultsDashboard() {
                   aria-pressed={ballClockwise}
                 >
                   <span>ball</span>
-                  <span aria-hidden="true">{ballArrow}</span>
+                  <span
+                    aria-hidden="true"
+                    className={`inline-flex h-4 w-4 items-center justify-center rounded-full border border-current/40 text-[10px] ${ballClockwise ? "bg-sky-500/15" : "bg-sky-900/40"}`}
+                  >
+                    {ballArrow}
+                  </span>
                 </button>
                 <button
                   type="button"
                   className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-left transition ${
                     wheelClockwise
-                      ? "border-accent/60 bg-accent/10 text-accent"
-                      : "border-ink-700 bg-ink-900 text-ink-300 hover:border-accent/60 hover:text-accent"
+                      ? "border-amber-500/60 bg-amber-500/10 text-amber-200"
+                      : "border-amber-700 bg-amber-950/20 text-amber-300 hover:border-amber-500/60 hover:text-amber-200"
                   }`}
                   onClick={toggleWheelDirection}
                   title="Toggle wheel direction"
@@ -454,7 +454,12 @@ export function ResultsDashboard() {
                   aria-pressed={wheelClockwise}
                 >
                   <span>wheel</span>
-                  <span aria-hidden="true">{wheelArrow}</span>
+                  <span
+                    aria-hidden="true"
+                    className={`inline-flex h-4 w-4 items-center justify-center rounded-full border border-current/40 text-[10px] ${wheelClockwise ? "bg-amber-500/15" : "bg-amber-900/40"}`}
+                  >
+                    {wheelArrow}
+                  </span>
                 </button>
               </span>{" "}
               <span className="inline-flex items-center gap-1.5 rounded-md border border-ink-700 bg-ink-900 px-1.5 py-0.5">
