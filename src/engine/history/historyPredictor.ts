@@ -62,6 +62,30 @@ export function cachedReleaseKernel(
 
 export const MIN_HISTORY_FOR_EVIDENCE = 20;
 
+/**
+ * Dirichlet prior strengths averaged over for the frequency and offset models.
+ * α = 1 expects wild biases; larger α expects the mild ones real wheels have
+ * (and learns them with far fewer spins). The history decides the mix.
+ */
+export const DIRICHLET_ALPHAS = [1, 5, 20, 80] as const;
+
+/** Posterior weights over α from each α's running log-likelihood. */
+function alphaWeights(ll: readonly number[]): number[] {
+  const m = Math.max(...ll);
+  const r = ll.map((l) => Math.exp(l - m));
+  const z = r.reduce((a, b) => a + b, 0);
+  return r.map((x) => x / z);
+}
+
+/** Predictive P(j) mixed over α: Σ_α w_α (c_j + α) / (total + Nα). */
+function dirichletMix(c: readonly number[], total: number, ll: readonly number[]): number[] {
+  const N = c.length;
+  const w = alphaWeights(ll);
+  return Array.from({ length: N }, (_, j) =>
+    DIRICHLET_ALPHAS.reduce((acc, a, k) => acc + w[k]! * ((c[j]! + a) / (total + N * a)), 0),
+  );
+}
+
 const LABELS: Record<HistoryModelId, string> = {
   uniform: "Uniform (fair wheel)",
   frequency: "Pocket frequency (wheel bias)",
@@ -134,6 +158,9 @@ export function predictFromHistory(
   const counts = new Array<number>(N).fill(0);
   const offCounts = new Array<number>(N).fill(0);
   let offN = 0;
+  // Running log-likelihood of each α (prior over α is uniform).
+  const freqLL = DIRICHLET_ALPHAS.map(() => 0);
+  const offLL = DIRICHLET_ALPHAS.map(() => 0);
   const ids: HistoryModelId[] = [
     "uniform",
     "frequency",
@@ -163,13 +190,13 @@ export function predictFromHistory(
       case "uniform":
         return new Array<number>(N).fill(1 / N);
       case "frequency":
-        return counts.map((c) => (c + 1) / (total + N));
+        return dirichletMix(counts, total, freqLL);
       case "sequence-offset":
         if (prev === null) return new Array<number>(N).fill(1 / N);
-        return Array.from(
-          { length: N },
-          (_, j) => (offCounts[(j - prev + N) % N]! + 1) / (offN + N),
-        );
+        {
+          const mix = dirichletMix(offCounts, offN, offLL);
+          return Array.from({ length: N }, (_, j) => mix[(j - prev + N) % N]!);
+        }
       case "physics-release":
         if (prev === null && settings.startingPointIndex === null)
           return new Array<number>(N).fill(1 / N);
@@ -190,9 +217,12 @@ export function predictFromHistory(
         if (topK(p, Math.min(10, N)).includes(cur)) hits[id]++;
       }
       scored++;
-      offCounts[(cur - prev + N) % N]! += 1;
+      const d = (cur - prev + N) % N;
+      DIRICHLET_ALPHAS.forEach((a, k) => (offLL[k]! += Math.log((offCounts[d]! + a) / (offN + N * a))));
+      offCounts[d]! += 1;
       offN++;
     }
+    DIRICHLET_ALPHAS.forEach((a, k) => (freqLL[k]! += Math.log((counts[cur]! + a) / (t + N * a))));
     counts[cur]! += 1;
   }
 

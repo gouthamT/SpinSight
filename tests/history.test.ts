@@ -116,6 +116,18 @@ describe("predictFromHistory", () => {
     expect(flagged).toBe(0);
   });
 
+  it("finds a mild, realistic bias (pocket 17 ≈ 1.7× as likely, 3000 spins)", () => {
+    // 2 % extra on pocket 17: the old flat Dirichlet(1) prior never found this.
+    for (let s = 1; s <= 5; s++) {
+      const r = mulberry32(s * 13);
+      const hist = Array.from({ length: 3000 }, () =>
+        r() < 0.02 ? 17 : EUROPEAN_ORDER[Math.floor(r() * 37)]!,
+      );
+      const p = predictFromHistory(hist, settings(), s);
+      expect(p.top10.map((x) => x.pocket)).toContain(17);
+    }
+  });
+
   it("detects a biased wheel (pocket 17 three times as likely, 2000 spins)", () => {
     const r = mulberry32(5);
     const w = EUROPEAN_ORDER.map((x) => (x === 17 ? 3 : 1));
