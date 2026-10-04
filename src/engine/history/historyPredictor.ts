@@ -26,6 +26,7 @@ import type {
 } from "@/types/history";
 import type { WheelType } from "@/types/roulette";
 import type { SignatureFit } from "./calibrate";
+import { CountFamily } from "./countFamily";
 import { releaseKernel, type ReleaseKernel } from "./physicsRelease";
 import { chiSquareUniform } from "./stats";
 
@@ -63,29 +64,8 @@ export function cachedReleaseKernel(
 
 export const MIN_HISTORY_FOR_EVIDENCE = 20;
 
-/**
- * Dirichlet prior strengths averaged over for the frequency and offset models.
- * α = 1 expects wild biases; larger α expects the mild ones real wheels have
- * (and learns them with far fewer spins). The history decides the mix.
- */
-export const DIRICHLET_ALPHAS = [1, 5, 20, 80] as const;
-
-/** Posterior weights over α from each α's running log-likelihood. */
-function alphaWeights(ll: readonly number[]): number[] {
-  const m = Math.max(...ll);
-  const r = ll.map((l) => Math.exp(l - m));
-  const z = r.reduce((a, b) => a + b, 0);
-  return r.map((x) => x / z);
-}
-
-/** Predictive P(j) mixed over α: Σ_α w_α (c_j + α) / (total + Nα). */
-function dirichletMix(c: readonly number[], total: number, ll: readonly number[]): number[] {
-  const N = c.length;
-  const w = alphaWeights(ll);
-  return Array.from({ length: N }, (_, j) =>
-    DIRICHLET_ALPHAS.reduce((acc, a, k) => acc + w[k]! * ((c[j]! + a) / (total + N * a)), 0),
-  );
-}
+/** Fixed-share rate: lets the combination switch quickly if a different model starts predicting better. */
+export const FIXED_SHARE = 1e-4;
 
 const LABELS: Record<HistoryModelId, string> = {
   uniform: "Uniform (fair wheel)",
@@ -165,9 +145,9 @@ export function predictFromHistory(
   const counts = new Array<number>(N).fill(0);
   const offCounts = new Array<number>(N).fill(0);
   let offN = 0;
-  // Running log-likelihood of each α (prior over α is uniform).
-  const freqLL = DIRICHLET_ALPHAS.map(() => 0);
-  const offLL = DIRICHLET_ALPHAS.map(() => 0);
+  // Families of count models (prior strength × sector width × memory), each mixed by its own fit.
+  const freqFam = new CountFamily(N);
+  const offFam = new CountFamily(N);
   const ids: HistoryModelId[] = [
     "uniform",
     "frequency",
@@ -187,21 +167,22 @@ export function predictFromHistory(
     "physics-release": 0,
   };
   let scored = 0;
+  const fs = ids.map(() => 1 / ids.length); // fixed-share weights
 
   const predictAt = (
     id: HistoryModelId,
     prev: number | null,
-    total: number,
+    _total: number,
   ): number[] => {
     switch (id) {
       case "uniform":
         return new Array<number>(N).fill(1 / N);
       case "frequency":
-        return dirichletMix(counts, total, freqLL);
+        return freqFam.predict();
       case "sequence-offset":
         if (prev === null) return new Array<number>(N).fill(1 / N);
         {
-          const mix = dirichletMix(offCounts, offN, offLL);
+          const mix = offFam.predict();
           return Array.from({ length: N }, (_, j) => mix[(j - prev + N) % N]!);
         }
       case "physics-release":
@@ -220,29 +201,34 @@ export function predictFromHistory(
       // Score every model on result t using only results < t.
       const o = t - 1 - (signature?.skippedOffsets ?? 0);
       const pre = signature && o >= 0 ? signature.fit.prequential[o] : undefined;
+      const step: number[] = [];
       for (const id of ids) {
         const p =
           id === "physics-release" && pre
             ? Array.from({ length: N }, (_, j) => pre[(j - prev + N) % N]!)
             : predictAt(id, prev, t);
         L[id] += Math.log(p[cur]!);
+        step.push(p[cur]!);
         if (topK(p, Math.min(10, N)).includes(cur)) hits[id]++;
       }
       scored++;
+      // Fixed-share update: Bayes step, then share a little weight with every model.
+      const v = fs.map((w, k) => w * step[k]!);
+      const vz = v.reduce((a, b) => a + b, 0);
+      for (let k = 0; k < fs.length; k++) fs[k] = (1 - FIXED_SHARE) * (v[k]! / vz) + FIXED_SHARE / fs.length;
       const d = (cur - prev + N) % N;
-      DIRICHLET_ALPHAS.forEach((a, k) => (offLL[k]! += Math.log((offCounts[d]! + a) / (offN + N * a))));
+      offFam.observe(d);
       offCounts[d]! += 1;
       offN++;
     }
-    DIRICHLET_ALPHAS.forEach((a, k) => (freqLL[k]! += Math.log((counts[cur]! + a) / (t + N * a))));
+    freqFam.observe(cur);
     counts[cur]! += 1;
   }
 
   // ---- model averaging -----------------------------------------------------
-  const maxL = Math.max(...ids.map((id) => L[id]));
-  const raw = ids.map((id) => Math.exp(L[id] - maxL));
-  const z = raw.reduce((a, b) => a + b, 0);
-  const weights = raw.map((r) => r / z);
+  // Weights: each model's walk-forward likelihood with a small fixed share, so
+  // the mix can still switch if another model starts predicting better.
+  const weights = fs;
   const last = n ? idx[n - 1]! : null;
   const nextDists = ids.map((id) => predictAt(id, anchorIndex, n));
   const probs = new Array<number>(N).fill(0);
@@ -254,8 +240,8 @@ export function predictFromHistory(
   const se = probs.map((_, j) => {
     const fP = nextDists[1]![j]!;
     const oP = nextDists[2]![j]!;
-    const seF = Math.sqrt((fP * (1 - fP)) / (n + N + 1));
-    const seO = Math.sqrt((oP * (1 - oP)) / (offN + N + 1));
+    const seF = Math.sqrt((fP * (1 - fP)) / (freqFam.effectiveCount() + N + 1));
+    const seO = Math.sqrt((oP * (1 - oP)) / (offFam.effectiveCount() + N + 1));
     const seP =
       anchorIndex === null ? 0 : phys.stdError[(j - anchorIndex + N) % N]!;
     return Math.sqrt(

@@ -450,6 +450,7 @@ Building blocks already in place: `decelerationModel.ts` (`timeToOmega`, `thetaA
 | D20 | Smooth rim constraint shared by all adapters | Polygonal rims caused ghost bounces; the rim is not where engines should differ |
 | D21 | Spin history stays local (IndexedDB/localStorage); no Supabase sync | User's choice: keep data on the device. `supabase/` remains unused |
 | D22 | Physics auto-calibrated from the history (`engine/history/calibrate.ts`) | Only the release signature (travel μ ± σ on a share q of spins) is identifiable from results alone. Fitted on a grid, scored walk-forward; applied only at 2·ln BF ≥ 6, else guide settings kept. The physics model is scored with the out-of-sample fit so calibration can't inflate its weight. Frequency/offset models average Dirichlet α ∈ {1,5,20,80} |
+| D23 | Frequency and offset models are families (`countFamily.ts`): prior strength α × sector width (0–2 neighbours) × memory (λ = 1, .995, .98), mixed by walk-forward fit with priors favouring plain whole-history counts; model combination uses fixed share (1e-4) | Catches sector bias and dealer/wheel changes without losing the fair-wheel behaviour |
 | D18 | No live ball-position or direction input for casino use | Would be a prediction device at a table, illegal under NSW/Qld casino law; also no informational value without measured speeds |
 
 ---

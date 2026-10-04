@@ -18,7 +18,6 @@ import type {
 import type { WheelType } from "@/types/roulette";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HistoryInput } from "./HistoryInput";
-import { heatColour } from "./PredictionResults";
 
 const pct = (p: number, d = 1) => `${(p * 100).toFixed(d)}%`;
 const ENGINES = ["kinematic", "rapier", "matter"] as const;
@@ -70,7 +69,17 @@ function rank(probs: number[], wheelType: WheelType): RankedPocket[] {
     }));
 }
 
-/** Ten numbers, shaded dark green (strongest) → dark red (weakest) within the ten. */
+/**
+ * Ten numbers as coloured text (no tile background): bright green for the
+ * strongest of the ten through yellow to bright red for the weakest. Colours
+ * are chosen for contrast on the dark panel.
+ */
+function heatText(p: number, mid: number, maxDev: number): string {
+  const t = Math.max(-1, Math.min(1, (p - mid) / maxDev));
+  const hue = Math.round(65 + 65 * t); // 130 green … 65 yellow … 0 red
+  return `hsl(${hue} 90% 62%)`;
+}
+
 function TenNumbers({
   top,
   baseline,
@@ -85,22 +94,19 @@ function TenNumbers({
     1e-12,
   );
   return (
-    <div className="grid grid-cols-10 gap-1">
-      {ten.map((r) => {
-        const c = heatColour(r.probability, mid, maxDev);
-        return (
-          <div
-            key={r.pocket}
-            className="flex aspect-square min-w-0 items-center justify-center rounded-md sm:rounded-lg"
-            style={{ background: c.bg, color: c.fg }}
-            title={`#${r.rank} · ${pocketLabel(r.pocket)} · ${pct(r.probability, 2)} (uniform ${pct(baseline, 2)})`}
-          >
-            <span className="num text-[13px] font-bold tracking-tighter sm:text-lg sm:tracking-normal">
-              {pocketLabel(r.pocket)}
-            </span>
-          </div>
-        );
-      })}
+    <div className="grid grid-cols-10 gap-0.5">
+      {ten.map((r) => (
+        <div
+          key={r.pocket}
+          className="flex min-w-0 items-center justify-center rounded-md border py-0.5"
+          style={{ color: heatText(r.probability, mid, maxDev), borderColor: heatText(r.probability, mid, maxDev) }}
+          title={`#${r.rank} · ${pocketLabel(r.pocket)} · ${pct(r.probability, 2)} (uniform ${pct(baseline, 2)})`}
+        >
+          <span className="num text-base font-extrabold tracking-tight sm:text-xl">
+            {pocketLabel(r.pocket)}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -540,10 +546,10 @@ export function ResultsDashboard() {
           </div>
           {prediction?.calibration && settings.autoCalibrate !== false && (
             <p
-              className={`px-1.5 pb-1 text-[11px] ${prediction.calibration.applied ? "text-accent" : "text-ink-400"}`}
+              className={`px-1.5 pb-1 text-[11px] ${prediction.calibration?.applied ? "text-accent" : "text-ink-400"}`}
               title={`Learned from your last ${prediction.calibration.spins} results, scored walk-forward (2·ln BF ${prediction.calibration.evidence2LnBF.toFixed(1)}; 6+ needed). Turn off in Settings.`}
             >
-              {prediction.calibration.applied ? "Calibrated from history: " : "Calibration: "}
+              {prediction.calibration?.applied ? "Calibrated from history: " : "Calibration: "}
               {prediction.calibration.reason}
             </p>
           )}
@@ -556,9 +562,9 @@ export function ResultsDashboard() {
                 ref={(el) => {
                   rowRefs.current[id] = el;
                 }}
-                className={`rounded-lg border px-1.5 py-1 transition ${dragging === id ? "border-accent/70 bg-ink-850 shadow-lg" : "border-transparent"} ${running ? "opacity-50" : ""}`}
+                className={`rounded-lg border px-1.5 py-0.5 transition ${dragging === id ? "border-accent/70 bg-ink-850 shadow-lg" : "border-transparent"} ${running ? "opacity-50" : ""}`}
               >
-                <div className="mb-1 flex items-center gap-1">
+                <div className="mb-0.5 flex items-center gap-1">
                   {/* Drag handle: pointer events work for touch, pen and mouse. */}
                   <span
                     role="button"
@@ -606,11 +612,11 @@ export function ResultsDashboard() {
                 ) : r.status ? (
                   <div className="px-1 text-xs text-ink-400">{r.status}</div>
                 ) : (
-                  <div className="grid grid-cols-10 gap-1">
+                  <div className="grid grid-cols-10 gap-0.5">
                     {Array.from({ length: 10 }, (_, i) => (
                       <div
                         key={i}
-                        className="aspect-square animate-pulse rounded-md bg-ink-800"
+                        className="mx-auto my-1 h-5 w-5 animate-pulse rounded bg-ink-800 sm:h-6 sm:w-6"
                       />
                     ))}
                   </div>

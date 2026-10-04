@@ -128,7 +128,7 @@ export function SettingsPanel() {
               </span>
               <span>{s.autoCalibrate !== false ? "On: physics is fitted to your results before each prediction" : "Off: physics uses the values below"}</span>
             </button>
-            {calibration && s.autoCalibrate !== false && (
+            {calibration?.reason && s.autoCalibrate !== false && (
               <span className="block text-[11px] text-ink-400">
                 Last run ({calibration.spins} results): {calibration.reason}
                 {calibration.applied && calibration.physics &&

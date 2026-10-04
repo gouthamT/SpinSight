@@ -21,10 +21,11 @@ ctx.onmessage = (e) => {
     }
     // Learn the physics from the history first, then predict with it as the base.
     const run = calibrateFromHistory(msg.values, s);
-    const cal = run.calibration;
-    const effective = cal.applied && cal.physics ? { ...s, physics: cal.physics } : s;
+    const cal = run?.calibration ?? null;
+    const applied = !!cal?.applied && !!cal.physics;
+    const effective = applied ? { ...s, physics: cal!.physics! } : s;
     const prediction = {
-      ...predictFromHistory(msg.values, effective, msg.seed, cal.applied ? run : null),
+      ...predictFromHistory(msg.values, effective, msg.seed, applied ? run : null),
       calibration: cal,
     };
     ctx.postMessage({ type: "result", prediction, runId: msg.runId });
