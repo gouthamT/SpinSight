@@ -62,6 +62,7 @@ export const DEFAULT_SETTINGS: HistorySettings = {
     ballDirection: guide.ballDirection as PhysicsSettings["ballDirection"],
   },
   engineRuns: { kinematic: 400, rapier: 60, matter: 120 },
+  autoCalibrate: true,
 };
 
 export const resultsStore = {

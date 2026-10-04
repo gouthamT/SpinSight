@@ -69,6 +69,24 @@ export interface HistorySettings {
   physics: PhysicsSettings;
   /** Spins simulated per guess by each physics engine view. */
   engineRuns: { kinematic: number; rapier: number; matter: number };
+  /** Learn the physics settings from the results history before predicting (default on). */
+  autoCalibrate?: boolean;
+}
+
+/** Physics settings learned from the history (see engine/history/calibrate.ts). */
+export interface Calibration {
+  /** True when the history showed a real repeatable pattern and the physics was adjusted. */
+  applied: boolean;
+  spins: number;
+  /** Walk-forward 2·ln Bayes factor of the fitted pattern against "no pattern". */
+  evidence2LnBF: number;
+  /** Fitted travel from the previous result (pockets), its spread, and the share of spins that follow it. */
+  mu: number;
+  sigma: number;
+  q: number;
+  /** Calibrated physics used for every physics view, or null if the base settings were kept. */
+  physics: PhysicsSettings | null;
+  reason: string;
 }
 
 /** Landing distribution for the next spin from one physics engine (simulation only). */
@@ -135,6 +153,8 @@ export interface HistoryPrediction {
   verdict: "insufficient-data" | "no-evidence" | "weak" | "moderate" | "strong";
   verdictText: string;
   settings: HistorySettings;
+  /** Result of calibrating the physics from this history (null when auto-calibration is off). */
+  calibration?: Calibration | null;
   elapsedMs: number;
 }
 

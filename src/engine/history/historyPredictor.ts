@@ -25,6 +25,7 @@ import type {
   RankedPocket,
 } from "@/types/history";
 import type { WheelType } from "@/types/roulette";
+import type { SignatureFit } from "./calibrate";
 import { releaseKernel, type ReleaseKernel } from "./physicsRelease";
 import { chiSquareUniform } from "./stats";
 
@@ -135,6 +136,12 @@ export function predictFromHistory(
   values: readonly number[],
   settings: HistorySettings,
   seed: number,
+  /**
+   * When the physics was calibrated from this history, its walk-forward fit.
+   * The physics model is then scored with the fit's out-of-sample predictions,
+   * so calibrating on the history cannot inflate its own weight.
+   */
+  signature: { fit: SignatureFit; skippedOffsets: number } | null = null,
 ): HistoryPrediction {
   const t0 = performance.now();
   const type: WheelType = settings.wheelType;
@@ -211,8 +218,13 @@ export function predictFromHistory(
     const prev = t > 0 ? idx[t - 1]! : null;
     if (prev !== null) {
       // Score every model on result t using only results < t.
+      const o = t - 1 - (signature?.skippedOffsets ?? 0);
+      const pre = signature && o >= 0 ? signature.fit.prequential[o] : undefined;
       for (const id of ids) {
-        const p = predictAt(id, prev, t);
+        const p =
+          id === "physics-release" && pre
+            ? Array.from({ length: N }, (_, j) => pre[(j - prev + N) % N]!)
+            : predictAt(id, prev, t);
         L[id] += Math.log(p[cur]!);
         if (topK(p, Math.min(10, N)).includes(cur)) hits[id]++;
       }

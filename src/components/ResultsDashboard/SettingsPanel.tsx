@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { WheelType } from "@/types/roulette";
-import type { HistorySettings, PhysicsSettings } from "@/types/history";
+import type { Calibration, HistorySettings, PhysicsSettings } from "@/types/history";
 import { WHEEL_LABEL } from "@/engine/wheel/layout";
 import { DEFAULT_SETTINGS, GUIDE_FACTS, resultsStore } from "@/lib/storage/resultsStore";
 
@@ -30,9 +30,11 @@ export function SettingsPanel() {
   const [s, setS] = useState<HistorySettings>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
 
   useEffect(() => {
     setS({ ...resultsStore.loadSettings(), wheelType: resultsStore.loadWheel() });
+    setCalibration(resultsStore.loadLast()?.calibration ?? null);
     setLoaded(true);
   }, []);
 
@@ -112,6 +114,29 @@ export function SettingsPanel() {
               </select>
             </label>
           ))}
+          <div className="space-y-1 sm:col-span-2">
+            <span className="text-xs text-ink-300">Learn physics from history</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={s.autoCalibrate !== false}
+              onClick={() => save({ ...s, autoCalibrate: s.autoCalibrate === false })}
+              className="flex w-full items-center gap-3 rounded-lg border border-ink-600 bg-ink-850 px-3 py-2 text-left text-sm"
+            >
+              <span className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition ${s.autoCalibrate !== false ? "bg-accent" : "bg-ink-600"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${s.autoCalibrate !== false ? "left-[22px]" : "left-0.5"}`} />
+              </span>
+              <span>{s.autoCalibrate !== false ? "On: physics is fitted to your results before each prediction" : "Off: physics uses the values below"}</span>
+            </button>
+            {calibration && s.autoCalibrate !== false && (
+              <span className="block text-[11px] text-ink-400">
+                Last run ({calibration.spins} results): {calibration.reason}
+                {calibration.applied && calibration.physics &&
+                  ` Launch speed ${calibration.physics.ballOmegaMean} rad/s (SD ${calibration.physics.ballOmegaSd}), long-roll chance ${calibration.physics.longRollProb}.`}
+                {" "}The values below are the base it starts from.
+              </span>
+            )}
+          </div>
           <label className="space-y-1">
             <span className="text-xs text-ink-300">Quick physics samples per guess</span>
             <select className="input" value={s.simulations} onChange={(e) => save({ ...s, simulations: Number(e.target.value) })}>

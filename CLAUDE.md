@@ -50,6 +50,7 @@ Use `src/engine/synthetic/syntheticWheel.ts` as the ground-truth oracle: render 
 - `src/engine/tracking/{kalmanFilter,accelerationEstimator,spinPhase,motionEstimator}.ts`, `src/engine/physics/decelerationModel.ts`: Phase 3
 - `src/engine/prediction/*`, `src/components/PredictionPanel/PredictionPanel.tsx`: Phase 4
 - `src/engine/physics/{rouletteScene,trajectoryModel,rapierEngine,matterEngine,simulationAdapter}.ts`, `src/workers/simulation.worker.ts`, `src/components/PhysicsVisualization/*`: Phase 5
+- `src/engine/history/calibrate.ts`: learns physics settings from the results history (decision D22); the stats worker calibrates, then predicts
 - `src/engine/history/*`, `src/workers/historySim.worker.ts`, `src/components/ResultsDashboard/*`, `src/lib/storage/resultsStore.ts`: results dashboard and settings
 - `src/components/WheelCalibration/CalibrationWizard.tsx`, `src/components/CameraFeed/LiveAnalysis.tsx`: the main UI
 - `supabase/migrations/0001_init.sql`: unused (decision D21: history stays local)

@@ -231,3 +231,39 @@ describe("engine kernels (instant guesses)", async () => {
     ).not.toBe(k.key);
   });
 });
+
+describe("calibrateFromHistory (physics learned from results)", async () => {
+  const { calibrateFromHistory } = await import("@/engine/history/calibrate");
+  const { releaseKernel: rk } = await import("@/engine/history/physicsRelease");
+  const signatureHistory = (n: number, seed: number, q = 0.5, mu = 12) => {
+    const r = mulberry32(seed);
+    let k = Math.floor(r() * 37);
+    const out = [EUROPEAN_ORDER[k]!];
+    for (let i = 1; i < n; i++) {
+      k = r() < q ? (k + mu + Math.round((r() - 0.5) * 4) + 37) % 37 : Math.floor(r() * 37);
+      out.push(EUROPEAN_ORDER[k]!);
+    }
+    return out;
+  };
+
+  it("keeps the base settings on fair random history", () => {
+    for (let s = 1; s <= 5; s++) {
+      const c = calibrateFromHistory(fairHistory(300, s), settings()).calibration;
+      expect(c.applied).toBe(false);
+      expect(c.physics).toBeNull();
+    }
+  });
+
+  it("learns a repeatable travel and the physics kernel reproduces it", () => {
+    const run = calibrateFromHistory(signatureHistory(150, 7), settings());
+    const c = run.calibration;
+    expect(c.applied).toBe(true);
+    expect(Math.abs(c.mu - 12)).toBeLessThanOrEqual(1);
+    const k = rk(37, c.physics!, 40000, 3, null, 1).kernel;
+    const peak = k.indexOf(Math.max(...k));
+    expect(Math.abs(peak - 12)).toBeLessThanOrEqual(2);
+    // Scored walk-forward, the calibrated physics model wins the averaging.
+    const p = predictFromHistory(signatureHistory(150, 7), { ...settings(), physics: c.physics! }, 1, run);
+    expect(p.models.find((m) => m.id === "physics-release")!.weight).toBeGreaterThan(0.5);
+  });
+});

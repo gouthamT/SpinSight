@@ -194,10 +194,25 @@ export function ResultsDashboard() {
     };
   }, []);
 
+  // Physics learned from the history (by the stats worker) is the base for every physics view.
+  const calibratedPhysics =
+    settings.autoCalibrate !== false && prediction?.calibration?.applied
+      ? prediction.calibration.physics
+      : null;
+  const calibratedKey = JSON.stringify(calibratedPhysics);
+  const effectiveSettings = useMemo<HistorySettings>(
+    () =>
+      calibratedPhysics
+        ? { ...settings, physics: { ...calibratedPhysics, ballDirection: settings.physics.ballDirection } }
+        : settings,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings, calibratedKey],
+  );
+
   // ---- background engine kernels: computed once per settings, cached ------------
   useEffect(() => {
     if (!hydrated) return;
-    const s = { ...settings, wheelType };
+    const s = { ...effectiveSettings, wheelType };
     const cache = resultsStore.loadKernels();
     const next: Partial<Record<EngineId, EngineKernel>> = {};
     for (const id of ENGINES) {
@@ -234,7 +249,7 @@ export function ResultsDashboard() {
       } satisfies KernelWorkerRequest);
     }
     setKernels(next);
-  }, [hydrated, settings, wheelType]);
+  }, [hydrated, effectiveSettings, wheelType]);
 
   const parsed = useMemo(
     () => parseHistory(text, wheelType),
@@ -523,6 +538,15 @@ export function ResultsDashboard() {
               )}
             </span>
           </div>
+          {prediction?.calibration && settings.autoCalibrate !== false && (
+            <p
+              className={`px-1.5 pb-1 text-[11px] ${prediction.calibration.applied ? "text-accent" : "text-ink-400"}`}
+              title={`Learned from your last ${prediction.calibration.spins} results, scored walk-forward (2·ln BF ${prediction.calibration.evidence2LnBF.toFixed(1)}; 6+ needed). Turn off in Settings.`}
+            >
+              {prediction.calibration.applied ? "Calibrated from history: " : "Calibration: "}
+              {prediction.calibration.reason}
+            </p>
+          )}
           {order.map((id, idx) => {
             const meta = ROW_META[id]!;
             const r = rowTop(id);
