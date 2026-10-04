@@ -21,6 +21,7 @@ const K = {
   engines: "spinsight:results:engineViews",
   kernels: "spinsight:results:engineKernels",
   order: "spinsight:results:rowOrder",
+  showStats: "spinsight:results:showStatsRows",
 } as const;
 
 function read<T>(key: string, fallback: T): T {
@@ -99,6 +100,8 @@ export const resultsStore = {
   },
   loadRowOrder: () => read<string[]>(K.order, []),
   saveRowOrder: (o: string[]) => write(K.order, o),
+  loadShowStats: () => read<boolean>(K.showStats, false),
+  saveShowStats: (v: boolean) => write(K.showStats, v),
   loadLog: () => read<PredictionLogEntry[]>(K.log, []),
   saveLog: (l: PredictionLogEntry[]) => write(K.log, l.slice(-500)),
   resetSettings: (): HistorySettings => {

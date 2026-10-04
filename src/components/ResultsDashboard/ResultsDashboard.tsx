@@ -55,6 +55,47 @@ const ROW_META: Record<string, { label: string; note: string }> = {
   },
 };
 const DEFAULT_ORDER = Object.keys(ROW_META);
+/** Statistical rows, hidden unless switched on in the results header. */
+const STATS_ROWS = ["combined", "frequency", "offset"];
+/** Rows whose first five feed the "Top picks" row. */
+const PICK_ROWS = ["physics", "kinematic", "rapier", "matter"] as const;
+const PICK_COLOURS = ["", "hsl(210 15% 80%)", "hsl(55 95% 60%)", "hsl(95 85% 58%)", "hsl(135 90% 58%)"];
+
+/** Unique numbers from the first five of each physics view, most-agreed first. */
+function TopPicks({ lists }: { lists: { id: string; top: RankedPocket[] }[] }) {
+  const seen = new Map<number, { count: number; first: number; from: string[] }>();
+  let k = 0;
+  for (let rank = 0; rank < 5; rank++)
+    for (const l of lists) {
+      const r = l.top[rank];
+      if (!r) continue;
+      const e = seen.get(r.pocket) ?? { count: 0, first: k++, from: [] };
+      e.count++;
+      e.from.push(ROW_META[l.id]!.label);
+      seen.set(r.pocket, e);
+    }
+  const picks = [...seen.entries()].sort((a, b) => b[1].count - a[1].count || a[1].first - b[1].first);
+  return (
+    <div className="grid grid-cols-10 gap-0.5">
+      {picks.map(([pocket, e]) => {
+        const c = PICK_COLOURS[Math.min(4, e.count)]!;
+        return (
+          <div
+            key={pocket}
+            className="relative flex min-w-0 items-center justify-center rounded-md border py-0.5"
+            style={{ color: c, borderColor: c }}
+            title={`${pocketLabel(pocket)} · in the first five of ${e.from.join(", ")}`}
+          >
+            <span className="num text-base font-extrabold tracking-tight sm:text-xl">{pocketLabel(pocket)}</span>
+            {e.count > 1 && (
+              <span className="num absolute right-0.5 top-0 text-[9px] font-bold leading-none opacity-80">{e.count}</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function rank(probs: number[], wheelType: WheelType): RankedPocket[] {
   const order = pocketOrder(wheelType);
@@ -136,6 +177,7 @@ export function ResultsDashboard() {
     {},
   );
   const [order, setOrder] = useState<string[]>(DEFAULT_ORDER);
+  const [showStats, setShowStats] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [running, setRunning] = useState(false);
@@ -173,6 +215,7 @@ export function ResultsDashboard() {
     setPrediction(last);
     if (last)
       setGuessedValues(parseHistory(t, w).values.slice(0, last.historyLength));
+    setShowStats(resultsStore.loadShowStats());
     const saved = resultsStore.loadRowOrder();
     if (saved.length)
       setOrder([
@@ -361,12 +404,23 @@ export function ResultsDashboard() {
   }, [hydrated, valid, guess]);
 
   // ---- drag-to-reorder -------------------------------------------------------
+  const visibleOrder = order.filter((id) => showStats || !STATS_ROWS.includes(id));
+  // `to` is a position among the VISIBLE rows; hidden rows keep their place after them.
   const move = (id: string, to: number) => {
     setOrder((o) => {
-      const next = o.filter((x) => x !== id);
+      const vis = o.filter((x) => showStats || !STATS_ROWS.includes(x));
+      const hidden = o.filter((x) => !vis.includes(x));
+      const next = vis.filter((x) => x !== id);
       next.splice(Math.max(0, Math.min(to, next.length)), 0, id);
-      resultsStore.saveRowOrder(next);
-      return next;
+      const full = [...next, ...hidden];
+      resultsStore.saveRowOrder(full);
+      return full;
+    });
+  };
+  const toggleStats = () => {
+    setShowStats((v) => {
+      resultsStore.saveShowStats(!v);
+      return !v;
     });
   };
 
@@ -526,7 +580,17 @@ export function ResultsDashboard() {
       {(prediction || running) && (
         <section className="panel relative p-1.5 sm:p-3" aria-busy={running}>
           <div className="flex items-center justify-between px-1.5 pb-1 text-[11px] text-ink-400">
-            <span>Next spin · 10 numbers per method</span>
+            <span className="flex items-center gap-2">
+              Next spin
+              <button
+                type="button"
+                onClick={toggleStats}
+                aria-pressed={showStats}
+                className="rounded border border-ink-600 px-1.5 py-0.5 text-[10px] text-ink-300 hover:border-accent hover:text-accent"
+              >
+                {showStats ? "Hide" : "Show"} stats rows
+              </button>
+            </span>
             <span
               className={`flex items-center gap-1.5 ${running ? "text-accent" : ""}`}
               role="status"
@@ -553,7 +617,24 @@ export function ResultsDashboard() {
               {prediction.calibration.reason}
             </p>
           )}
-          {order.map((id, idx) => {
+          {(() => {
+            const lists = PICK_ROWS.map((id) => ({ id, top: rowTop(id).top })).filter(
+              (l): l is { id: (typeof PICK_ROWS)[number]; top: RankedPocket[] } => !!l.top,
+            );
+            if (!lists.length) return null;
+            return (
+              <div className={`rounded-lg border border-accent/30 px-1.5 py-0.5 ${running ? "opacity-50" : ""}`}>
+                <div className="mb-0.5 flex items-baseline gap-2 pl-1">
+                  <h3 className="shrink-0 text-sm font-semibold">Top picks</h3>
+                  <p className="truncate text-[11px] text-ink-400">
+                    Unique first fives of {lists.map((l) => ROW_META[l.id]!.label).join(", ")}; small number = how many agree
+                  </p>
+                </div>
+                <TopPicks lists={lists} />
+              </div>
+            );
+          })()}
+          {visibleOrder.map((id, idx) => {
             const meta = ROW_META[id]!;
             const r = rowTop(id);
             return (
@@ -579,7 +660,7 @@ export function ResultsDashboard() {
                       if (dragging !== id) return;
                       const y = e.clientY;
                       let target = 0;
-                      order.forEach((other) => {
+                      visibleOrder.forEach((other) => {
                         if (other === id) return;
                         const el = rowRefs.current[other];
                         if (el) {
@@ -625,7 +706,7 @@ export function ResultsDashboard() {
             );
           })}
           <p className="mt-1 border-t border-ink-700 px-1.5 pt-2 text-[11px] leading-relaxed text-ink-400">
-            Updates automatically as you type. Darkest green first; hold ⠿ to
+            Updates automatically as you type. Green first; hold ⠿ to
             reorder. {prediction?.verdictText} On a fair wheel every number has
             a {pct(baseline, 2)} chance; these are experimental model outputs,
             not verified predictions.
